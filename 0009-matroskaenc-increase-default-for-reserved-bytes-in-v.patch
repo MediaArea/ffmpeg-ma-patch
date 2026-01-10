@@ -1,0 +1,125 @@
+From 7060c46cb7bcc145e20526a0f53854ee93f518c3 Mon Sep 17 00:00:00 2001
+From: Jerome Martinez <jerome@mediaarea.net>
+Date: Thu, 4 Sep 2025 20:23:17 +0200
+Subject: [PATCH 09/18] matroskaenc: increase default for reserved bytes in
+ video track header
+
+This permits to handle by default more e.g. timecodes without having to set the corresponding option
+---
+ libavformat/matroskaenc.c     |  2 +-
+ tests/ref/lavf/mkv            |  4 ++--
+ tests/ref/lavf/mkv_attachment |  4 ++--
+ tests/ref/seek/lavf-mkv       | 44 +++++++++++++++++------------------
+ 4 files changed, 27 insertions(+), 27 deletions(-)
+
+diff --git a/libavformat/matroskaenc.c b/libavformat/matroskaenc.c
+index 01239bea57..24e0a33c55 100644
+--- a/libavformat/matroskaenc.c
++++ b/libavformat/matroskaenc.c
+@@ -3580,7 +3580,7 @@ static const AVCodecTag additional_subtitle_tags[] = {
+ #define FLAGS AV_OPT_FLAG_ENCODING_PARAM
+ static const AVOption options[] = {
+     { "reserve_index_space", "reserve a given amount of space (in bytes) at the beginning of the file for the index (cues)", OFFSET(reserve_cues_space), AV_OPT_TYPE_INT,   { .i64 = 0 },   0, INT_MAX,   FLAGS },
+-    { "reserve_video_track_space", "reserve a given amount of space (in bytes) at the beginning of the file for the block additions (HDR, timecodes...)", OFFSET(reserve_video_track_space), AV_OPT_TYPE_INT, { .i64 = 15 }, 0, INT_MAX, FLAGS }, /* the number of block additions is not known in advance, so the default value strikes a balance between the size of the reserved header size and the maximum number of block additions that can be registered at the end of writing */
++    { "reserve_video_track_space", "reserve a given amount of space (in bytes) at the beginning of the file for the block additions (HDR, timecodes...)", OFFSET(reserve_video_track_space), AV_OPT_TYPE_INT, { .i64 = 4 + 11 * 8 }, 0, INT_MAX, FLAGS }, /* the number of block additions is not known in advance, so the default value strikes a balance between the size of the reserved header size and the maximum number of block additions that can be registered at the end of writing */
+     { "cues_to_front", "move Cues (the index) to the front by shifting data if necessary", OFFSET(move_cues_to_front), AV_OPT_TYPE_BOOL, { .i64 = 0}, 0, 1, FLAGS },
+     { "cluster_size_limit",  "store at most the provided amount of bytes in a cluster",                                     OFFSET(cluster_size_limit), AV_OPT_TYPE_INT  , { .i64 = -1 }, -1, INT_MAX,   FLAGS },
+     { "cluster_time_limit",  "store at most the provided number of milliseconds in a cluster",                               OFFSET(cluster_time_limit), AV_OPT_TYPE_INT64, { .i64 = -1 }, -1, INT64_MAX, FLAGS },
+diff --git a/tests/ref/lavf/mkv b/tests/ref/lavf/mkv
+index b32b521cfa..8fea09caf6 100644
+--- a/tests/ref/lavf/mkv
++++ b/tests/ref/lavf/mkv
+@@ -1,3 +1,3 @@
+-9397da7654fc3a00a439545584608637 *tests/data/lavf/lavf.mkv
+-320443 tests/data/lavf/lavf.mkv
++c95871d60c576ae73f360145cb61db90 *tests/data/lavf/lavf.mkv
++320520 tests/data/lavf/lavf.mkv
+ tests/data/lavf/lavf.mkv CRC=0xec6c3c68
+diff --git a/tests/ref/lavf/mkv_attachment b/tests/ref/lavf/mkv_attachment
+index aa3faf9d12..221f4ddd49 100644
+--- a/tests/ref/lavf/mkv_attachment
++++ b/tests/ref/lavf/mkv_attachment
+@@ -1,3 +1,3 @@
+-1c40de58fae4e878e0a499bfe61d78e0 *tests/data/lavf/lavf.mkv_attachment
+-472593 tests/data/lavf/lavf.mkv_attachment
++fdfcb796a2e1a020bcc36ea926a243ce *tests/data/lavf/lavf.mkv_attachment
++472670 tests/data/lavf/lavf.mkv_attachment
+ tests/data/lavf/lavf.mkv_attachment CRC=0xec6c3c68
+diff --git a/tests/ref/seek/lavf-mkv b/tests/ref/seek/lavf-mkv
+index 2eb8506356..f2253e1c59 100644
+--- a/tests/ref/seek/lavf-mkv
++++ b/tests/ref/seek/lavf-mkv
+@@ -1,48 +1,48 @@
+-ret: 0         st: 1 flags:1 dts:-0.011000 pts:-0.011000 pos:    685 size:   208
++ret: 0         st: 1 flags:1 dts:-0.011000 pts:-0.011000 pos:    762 size:   208
+ ret: 0         st:-1 flags:0  ts:-1.000000
+-ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:    901 size: 27837
++ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:    978 size: 27837
+ ret: 0         st:-1 flags:1  ts: 1.894167
+-ret: 0         st: 0 flags:1 dts: 0.960000 pts: 0.960000 pos: 292317 size: 27834
++ret: 0         st: 0 flags:1 dts: 0.960000 pts: 0.960000 pos: 292394 size: 27834
+ ret: 0         st: 0 flags:0  ts: 0.788000
+-ret: 0         st: 0 flags:1 dts: 0.960000 pts: 0.960000 pos: 292317 size: 27834
++ret: 0         st: 0 flags:1 dts: 0.960000 pts: 0.960000 pos: 292394 size: 27834
+ ret: 0         st: 0 flags:1  ts:-0.317000
+-ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:    901 size: 27837
++ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:    978 size: 27837
+ ret:-1         st: 1 flags:0  ts: 2.577000
+ ret: 0         st: 1 flags:1  ts: 1.471000
+-ret: 0         st: 1 flags:1 dts: 0.982000 pts: 0.982000 pos: 320161 size:   209
++ret: 0         st: 1 flags:1 dts: 0.982000 pts: 0.982000 pos: 320238 size:   209
+ ret: 0         st:-1 flags:0  ts: 0.365002
+-ret: 0         st: 0 flags:1 dts: 0.480000 pts: 0.480000 pos: 146869 size: 27925
++ret: 0         st: 0 flags:1 dts: 0.480000 pts: 0.480000 pos: 146946 size: 27925
+ ret: 0         st:-1 flags:1  ts:-0.740831
+-ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:    901 size: 27837
++ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:    978 size: 27837
+ ret:-1         st: 0 flags:0  ts: 2.153000
+ ret: 0         st: 0 flags:1  ts: 1.048000
+-ret: 0         st: 0 flags:1 dts: 0.960000 pts: 0.960000 pos: 292317 size: 27834
++ret: 0         st: 0 flags:1 dts: 0.960000 pts: 0.960000 pos: 292394 size: 27834
+ ret: 0         st: 1 flags:0  ts:-0.058000
+-ret: 0         st: 1 flags:1 dts:-0.011000 pts:-0.011000 pos:    685 size:   208
++ret: 0         st: 1 flags:1 dts:-0.011000 pts:-0.011000 pos:    762 size:   208
+ ret: 0         st: 1 flags:1  ts: 2.836000
+-ret: 0         st: 1 flags:1 dts: 0.982000 pts: 0.982000 pos: 320161 size:   209
++ret: 0         st: 1 flags:1 dts: 0.982000 pts: 0.982000 pos: 320238 size:   209
+ ret:-1         st:-1 flags:0  ts: 1.730004
+ ret: 0         st:-1 flags:1  ts: 0.624171
+-ret: 0         st: 0 flags:1 dts: 0.480000 pts: 0.480000 pos: 146869 size: 27925
++ret: 0         st: 0 flags:1 dts: 0.480000 pts: 0.480000 pos: 146946 size: 27925
+ ret: 0         st: 0 flags:0  ts:-0.482000
+-ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:    901 size: 27837
++ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:    978 size: 27837
+ ret: 0         st: 0 flags:1  ts: 2.413000
+-ret: 0         st: 0 flags:1 dts: 0.960000 pts: 0.960000 pos: 292317 size: 27834
++ret: 0         st: 0 flags:1 dts: 0.960000 pts: 0.960000 pos: 292394 size: 27834
+ ret:-1         st: 1 flags:0  ts: 1.307000
+ ret: 0         st: 1 flags:1  ts: 0.201000
+-ret: 0         st: 1 flags:1 dts:-0.011000 pts:-0.011000 pos:    685 size:   208
++ret: 0         st: 1 flags:1 dts:-0.011000 pts:-0.011000 pos:    762 size:   208
+ ret: 0         st:-1 flags:0  ts:-0.904994
+-ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:    901 size: 27837
++ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:    978 size: 27837
+ ret: 0         st:-1 flags:1  ts: 1.989173
+-ret: 0         st: 0 flags:1 dts: 0.960000 pts: 0.960000 pos: 292317 size: 27834
++ret: 0         st: 0 flags:1 dts: 0.960000 pts: 0.960000 pos: 292394 size: 27834
+ ret: 0         st: 0 flags:0  ts: 0.883000
+-ret: 0         st: 0 flags:1 dts: 0.960000 pts: 0.960000 pos: 292317 size: 27834
++ret: 0         st: 0 flags:1 dts: 0.960000 pts: 0.960000 pos: 292394 size: 27834
+ ret: 0         st: 0 flags:1  ts:-0.222000
+-ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:    901 size: 27837
++ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:    978 size: 27837
+ ret:-1         st: 1 flags:0  ts: 2.672000
+ ret: 0         st: 1 flags:1  ts: 1.566000
+-ret: 0         st: 1 flags:1 dts: 0.982000 pts: 0.982000 pos: 320161 size:   209
++ret: 0         st: 1 flags:1 dts: 0.982000 pts: 0.982000 pos: 320238 size:   209
+ ret: 0         st:-1 flags:0  ts: 0.460008
+-ret: 0         st: 0 flags:1 dts: 0.480000 pts: 0.480000 pos: 146869 size: 27925
++ret: 0         st: 0 flags:1 dts: 0.480000 pts: 0.480000 pos: 146946 size: 27925
+ ret: 0         st:-1 flags:1  ts:-0.645825
+-ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:    901 size: 27837
++ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:    978 size: 27837
+-- 
+2.52.0
+

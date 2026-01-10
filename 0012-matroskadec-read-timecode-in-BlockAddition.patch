@@ -1,0 +1,84 @@
+From 15b3befd2a31ee264617a39d8943bcf9505a589b Mon Sep 17 00:00:00 2001
+From: Jerome Martinez <jerome@mediaarea.net>
+Date: Thu, 4 Sep 2025 20:17:55 +0200
+Subject: [PATCH 12/18] matroskadec: read timecode in BlockAddition
+
+---
+ libavformat/matroska.h    |  1 +
+ libavformat/matroskadec.c | 34 ++++++++++++++++++++++++++++++++++
+ 2 files changed, 35 insertions(+)
+
+diff --git a/libavformat/matroska.h b/libavformat/matroska.h
+index 719f2ef796..d78b33d4b2 100644
+--- a/libavformat/matroska.h
++++ b/libavformat/matroska.h
+@@ -361,6 +361,7 @@ typedef enum {
+   MATROSKA_BLOCK_ADD_ID_TYPE_DEFAULT                = 0,
+   MATROSKA_BLOCK_ADD_ID_TYPE_OPAQUE                 = 1,
+   MATROSKA_BLOCK_ADD_ID_TYPE_ITU_T_T35              = 4,
++  MATROSKA_BLOCK_ADD_ID_TYPE_SMPTE_12M              = 121,
+   MATROSKA_BLOCK_ADD_ID_TYPE_DVCC                   = 0x64766343, // MKBETAG('d','v','c','C')
+   MATROSKA_BLOCK_ADD_ID_TYPE_DVVC                   = 0x64767643, // MKBETAG('d','v','v','C')
+ } MatroskaBlockAddIDType;
+diff --git a/libavformat/matroskadec.c b/libavformat/matroskadec.c
+index 8b5eda8213..2c9408359c 100644
+--- a/libavformat/matroskadec.c
++++ b/libavformat/matroskadec.c
+@@ -295,6 +295,7 @@ typedef struct MatroskaTrack {
+ 
+     uint32_t palette[AVPALETTE_COUNT];
+     int has_palette;
++    int add_block_timecode_count;
+ } MatroskaTrack;
+ 
+ typedef struct MatroskaAttachment {
+@@ -2530,6 +2531,9 @@ static int mkv_parse_block_addition_mappings(AVFormatContext *s, AVStream *st, M
+                     return AVERROR_INVALIDDATA;
+             }
+             break;
++        case MATROSKA_BLOCK_ADD_ID_TYPE_SMPTE_12M:
++                track->add_block_timecode_count++;
++                break;
+         case MATROSKA_BLOCK_ADD_ID_TYPE_DVCC:
+         case MATROSKA_BLOCK_ADD_ID_TYPE_DVVC:
+             if ((ret = mkv_parse_dvcc_dvvc(s, st, track, &mapping->extradata)) < 0)
+@@ -3963,6 +3967,36 @@ static int matroska_parse_block_additional(MatroskaDemuxContext *matroska,
+ 
+         return 0;
+     }
++    case MATROSKA_BLOCK_ADD_ID_TYPE_SMPTE_12M: {
++        if (size < 8) {
++            av_log(matroska->ctx, AV_LOG_WARNING, "SMPTE timecode from BlockAdditional is malformed.\n");
++            break;
++        }
++
++        size_t sd_size = 0;
++        uint8_t *sd = av_packet_get_side_data(pkt, AV_PKT_DATA_S12M_TIMECODE, &sd_size);
++        uint64_t count = sd ? *((uint64_t*)sd) : 0;
++        if (!count) {
++            sd_size = sizeof(uint64_t) * (1 + track->add_block_timecode_count);
++            sd = av_packet_new_side_data(pkt, AV_PKT_DATA_S12M_TIMECODE, sd_size);
++            count = 0;
++        }
++
++        if (count >= track->add_block_timecode_count) {
++            av_log(matroska->ctx, AV_LOG_DEBUG, "There are more timecodes in the block than the count indicated in the track header, extra timecodes are ignored.\n");
++        }
++        else if (sd) {
++            uint64_t tc = *((uint64_t*)data);
++            av_log(matroska->ctx, AV_LOG_DEBUG, "Reading SMPTE timecode from BlockAdditional: 0x%016lX (RFC 5484)\n", tc);
++
++            uint64_t *sd_64 = (uint64_t*)sd;
++            count++;
++            *sd_64 = count;
++            AV_WB64(sd_64 + count, tc);
++        }
++        
++        return 0;
++    }
+     default:
+         break;
+     }
+-- 
+2.52.0
+

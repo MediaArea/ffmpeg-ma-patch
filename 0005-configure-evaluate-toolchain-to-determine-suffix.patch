@@ -1,8 +1,17 @@
+From 8e3f6553a97a1820d794f11555a0add5cb0e2803 Mon Sep 17 00:00:00 2001
+From: Jerome Martinez <jerome@mediaarea.net>
+Date: Tue, 2 Dec 2025 12:29:03 +0100
+Subject: [PATCH 05/18] configure evaluate toolchain to determine suffix
+
+---
+ configure | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
 diff --git a/configure b/configure
-index 301a3e5e3e..8a766c667c 100755
+index 998b0292b8..9d24069a90 100755
 --- a/configure
 +++ b/configure
-@@ -4913,11 +4913,15 @@ fi
+@@ -4929,11 +4929,15 @@ fi
  exesuf() {
      case $1 in
          mingw32*|mingw64*|msys*|win32|win64|cygwin*|*-dos|freedos|opendos|os/2*|symbian|windows_nt) echo .exe ;;
@@ -20,3 +29,6 @@ index 301a3e5e3e..8a766c667c 100755
  
  # set temporary file name
  : ${TMPDIR:=$TEMPDIR}
+-- 
+2.52.0
+

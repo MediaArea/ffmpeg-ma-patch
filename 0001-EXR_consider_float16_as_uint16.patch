@@ -1,7 +1,7 @@
-From 9d4c86038137b64b0264f3295de54360e4bc115d Mon Sep 17 00:00:00 2001
+From b79623b98c9418cc1beaa5014e595ed6f77a9aa2 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?J=C3=A9r=C3=B4me=20Martinez?= <jerome@mediaarea.net>
 Date: Wed, 14 Oct 2020 08:02:22 +0200
-Subject: [PATCH 1/6] EXR_consider_float16_as_uint16
+Subject: [PATCH 01/18] EXR_consider_float16_as_uint16
 
 ---
  libavcodec/exr.c | 32 +++++++++++++++++++++++++++++---
@@ -82,5 +82,5 @@ index 536a55c5be..37fcfdc7e6 100644
          AV_OPT_TYPE_STRING, { .str = "" }, 0, 0, VD },
      { "part",  "Set the decoding part", OFFSET(selected_part),
 -- 
-2.46.0.windows.1
+2.52.0
 

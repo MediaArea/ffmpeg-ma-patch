@@ -1,0 +1,125 @@
+From bc1e13ea01bca79f53a3083df677faf07e28c8af Mon Sep 17 00:00:00 2001
+From: Jerome Martinez <jerome@mediaarea.net>
+Date: Sun, 23 Nov 2025 17:40:55 +0100
+Subject: [PATCH 15/18] decklink_dec: support readout of all timecodes
+
+---
+ libavdevice/decklink_common.h |  1 +
+ libavdevice/decklink_dec.cpp  | 44 ++++++++++++++++++++++++++++-------
+ libavdevice/decklink_dec_c.c  |  3 ++-
+ 3 files changed, 39 insertions(+), 9 deletions(-)
+
+diff --git a/libavdevice/decklink_common.h b/libavdevice/decklink_common.h
+index 095b438bce..3f67d023b1 100644
+--- a/libavdevice/decklink_common.h
++++ b/libavdevice/decklink_common.h
+@@ -238,6 +238,7 @@ static const BMDTimecodeFormat decklink_timecode_format_map[] = {
+ #else
+     (BMDTimecodeFormat)0,
+ #endif
++    (BMDTimecodeFormat)1, // All
+ };
+ 
+ static const BMDLinkConfiguration decklink_link_conf_map[] = {
+diff --git a/libavdevice/decklink_dec.cpp b/libavdevice/decklink_dec.cpp
+index 78ec0ee0d2..8727e9d389 100644
+--- a/libavdevice/decklink_dec.cpp
++++ b/libavdevice/decklink_dec.cpp
+@@ -736,6 +736,33 @@ static int get_frame_timecode(AVFormatContext *avctx, decklink_ctx *ctx, AVTimec
+ {
+     AVRational frame_rate = ctx->video_st->r_frame_rate;
+     int ret;
++    if (ctx->tc_format == (BMDTimecodeFormat)1) {
++        int count = 0;
++        ret = get_bmd_timecode(avctx, tc + count, frame_rate, bmdTimecodeRP188VITC1, videoFrame);
++        if (ret != AVERROR(ENOENT))
++            count++;
++        ret = get_bmd_timecode(avctx, tc + count, frame_rate, bmdTimecodeRP188VITC2, videoFrame);
++        if (ret != AVERROR(ENOENT))
++            count++;
++        ret = get_bmd_timecode(avctx, tc + count, frame_rate, bmdTimecodeRP188LTC, videoFrame);
++        if (ret != AVERROR(ENOENT))
++            count++;
++#if BLACKMAGIC_DECKLINK_API_VERSION >= 0x0b000000
++        ret = get_bmd_timecode(avctx, tc + count, frame_rate, bmdTimecodeRP188HighFrameRate, videoFrame);
++        if (ret != AVERROR(ENOENT))
++            count++;
++#endif
++        ret = get_bmd_timecode(avctx, tc + count, frame_rate, bmdTimecodeVITC, videoFrame);
++        if (ret != AVERROR(ENOENT))
++            count++;
++        ret = get_bmd_timecode(avctx, tc + count, frame_rate, bmdTimecodeVITCField2, videoFrame);
++        if (ret != AVERROR(ENOENT))
++            count++;
++        ret = get_bmd_timecode(avctx, tc + count, frame_rate, bmdTimecodeSerial, videoFrame);
++        if (ret != AVERROR(ENOENT))
++            count++;
++       return count;
++    }
+     /* 50/60 fps content has alternating VITC1 and VITC2 timecode (see SMPTE ST
+      * 12-2, section 7), so the native ordering of RP188Any (HFR, VITC1, LTC,
+      * VITC2) would not work because LTC might not contain the field flag.
+@@ -753,7 +780,7 @@ static int get_frame_timecode(AVFormatContext *avctx, decklink_ctx *ctx, AVTimec
+     } else {
+        ret = get_bmd_timecode(avctx, tc, frame_rate, ctx->tc_format, videoFrame);
+     }
+-    return ret;
++    return ret >= 0;
+ }
+ 
+ HRESULT decklink_input_callback::VideoInputFrameArrived(
+@@ -848,22 +875,23 @@ HRESULT decklink_input_callback::VideoInputFrameArrived(
+ 
+             // Handle Timecode (if requested)
+             if (ctx->tc_format) {
+-                AVTimecode tcr;
+-                if (get_frame_timecode(avctx, ctx, &tcr, videoFrame) >= 0) {
++                AVTimecode tcr[8];
++                int count = get_frame_timecode(avctx, ctx, &tcr[0], videoFrame);
++                if (count > 0) {
+                     char tcstr[AV_TIMECODE_STR_SIZE];
+-                    const char *tc = av_timecode_make_string(&tcr, tcstr, 0);
++                    const char *tc = av_timecode_make_string(&tcr[0], tcstr, 0);
+                     if (tc) {
+                         AVDictionary* metadata_dict = NULL;
+                         uint8_t* packed_metadata;
+ 
+                         if (av_cmp_q(ctx->video_st->r_frame_rate, av_make_q(60, 1)) < 1) {
+-                            uint64_t tc_data = av_timecode_expand_to_64bit(av_timecode_get_smpte_from_framenum(&tcr, 0));
+-                            int size = sizeof(uint64_t) * 4;
++                            int size = sizeof(uint64_t) * (1 + count);
+                             uint64_t *sd = (uint64_t *)av_packet_new_side_data(&pkt, AV_PKT_DATA_S12M_TIMECODE, size);
+ 
+                             if (sd) {
+-                                *sd       = 1;       // one TC
+-                                *(sd + 1) = tc_data; // TC
++                                *sd = count;
++                                for (int i = 0; i < count; i++)
++                                    *(sd + 1 + i) = av_timecode_expand_to_64bit(av_timecode_get_smpte_from_framenum(&tcr[i], 0));
+                             }
+                         }
+ 
+diff --git a/libavdevice/decklink_dec_c.c b/libavdevice/decklink_dec_c.c
+index b8cdb7bd8e..583107e191 100644
+--- a/libavdevice/decklink_dec_c.c
++++ b/libavdevice/decklink_dec_c.c
+@@ -60,7 +60,7 @@ static const AVOption options[] = {
+     { "two_sub_device_full",      NULL,                               0,  AV_OPT_TYPE_CONST, { .i64 = 4}, 0, 0,    DEC, .unit = "duplex_mode"},
+     { "four_sub_device_half",     NULL,                               0,  AV_OPT_TYPE_CONST, { .i64 = 5}, 0, 0,    DEC, .unit = "duplex_mode"},
+ #endif
+-    { "timecode_format", "timecode format",           OFFSET(tc_format),  AV_OPT_TYPE_INT,   { .i64 = 0}, 0, 8,    DEC, .unit = "tc_format"},
++    { "timecode_format", "timecode format",           OFFSET(tc_format),  AV_OPT_TYPE_INT,   { .i64 = 0}, 0, 9,    DEC, .unit = "tc_format"},
+     { "none",          NULL,                                          0,  AV_OPT_TYPE_CONST, { .i64 = 0}, 0, 0,    DEC, .unit = "tc_format"},
+     { "rp188vitc",     NULL,                                          0,  AV_OPT_TYPE_CONST, { .i64 = 1}, 0, 0,    DEC, .unit = "tc_format"},
+     { "rp188vitc2",    NULL,                                          0,  AV_OPT_TYPE_CONST, { .i64 = 2}, 0, 0,    DEC, .unit = "tc_format"},
+@@ -72,6 +72,7 @@ static const AVOption options[] = {
+ #if BLACKMAGIC_DECKLINK_API_VERSION >= 0x0b000000
+     { "rp188hfr",      NULL,                                          0,  AV_OPT_TYPE_CONST, { .i64 = 8}, 0, 0,    DEC, .unit = "tc_format"},
+ #endif
++    { "all",           NULL,                                          0,  AV_OPT_TYPE_CONST, { .i64 = 9}, 0, 0,    DEC, .unit = "tc_format"},
+     { "video_input",  "video input",              OFFSET(video_input),    AV_OPT_TYPE_INT,   { .i64 = 0}, 0, 6,    DEC, .unit = "video_input"},
+     { "unset",         NULL,                                          0,  AV_OPT_TYPE_CONST, { .i64 = 0}, 0, 0,    DEC, .unit = "video_input"},
+     { "sdi",           NULL,                                          0,  AV_OPT_TYPE_CONST, { .i64 = 1}, 0, 0,    DEC, .unit = "video_input"},
+-- 
+2.52.0
+

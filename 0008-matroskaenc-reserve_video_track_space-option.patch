@@ -1,0 +1,172 @@
+From 2700aafe66d54c32051573863795305b47345b5c Mon Sep 17 00:00:00 2001
+From: Jerome Martinez <jerome@mediaarea.net>
+Date: Wed, 3 Sep 2025 21:33:50 +0200
+Subject: [PATCH 08/18] matroskaenc: reserve_video_track_space option
+
+The number of block additions is not known in advance, so we need to be able to set more reserved space for when we add a lot more block additions.
+It is also possible to reduce the reserved space (or even eliminate it) for those who want to keep the smallest header possible.
+---
+ libavformat/matroskaenc.c | 82 ++++++++++++++++++++++++++++-----------
+ 1 file changed, 59 insertions(+), 23 deletions(-)
+
+diff --git a/libavformat/matroskaenc.c b/libavformat/matroskaenc.c
+index 7b43451a70..01239bea57 100644
+--- a/libavformat/matroskaenc.c
++++ b/libavformat/matroskaenc.c
+@@ -80,6 +80,8 @@
+  * and so has avio_write(). */
+ #define MAX_SUPPORTED_EBML_LENGTH FFMIN(MAX_EBML_LENGTH, INT_MAX)
+ 
++#define MAX_MATROSKA_BLOCK_ADD_ITU_T_T35 1 /* currently only 1 such element is supported */
++
+ #define MODE_MATROSKAv2 0x01
+ #define MODE_WEBM       0x02
+ 
+@@ -196,6 +198,7 @@ typedef struct mkv_track {
+     int64_t         duration;
+     int64_t         duration_offset;
+     uint64_t        max_blockaddid;
++    int             itu_t_t35_count;
+     int64_t         blockadditionmapping_offset;
+     int             codecpriv_offset;
+     unsigned        codecpriv_size;     ///< size reserved for CodecPrivate excluding header+length field
+@@ -249,6 +252,7 @@ typedef struct MatroskaMuxContext {
+     int                 wrote_tags;
+ 
+     int                 reserve_cues_space;
++    int                 reserve_video_track_space;
+     int                 cluster_size_limit;
+     int64_t             cluster_time_limit;
+     int                 write_crc;
+@@ -1706,19 +1710,12 @@ static void mkv_write_blockadditionmapping(AVFormatContext *s, const MatroskaMux
+     const AVDOVIDecoderConfigurationRecord *dovi;
+     const AVPacketSideData *sd;
+ 
+-    if (IS_SEEKABLE(s->pb, mkv) && par->codec_type == AVMEDIA_TYPE_VIDEO) {
++    if (IS_SEEKABLE(s->pb, mkv) && par->codec_type == AVMEDIA_TYPE_VIDEO && mkv->reserve_video_track_space > 1) {
+         track->blockadditionmapping_offset = avio_tell(pb);
+         // We can't know at this point if there will be a block with BlockAdditions, so
+         // we either write the default value here, or a void element. Either of them will
+         // be overwritten when finishing the track.
+-        if (par->codec_type == AVMEDIA_TYPE_VIDEO) {
+-            // Similarly, reserve space for an eventual
+-            // HDR10+ ITU T.35 metadata BlockAdditionMapping.
+-            put_ebml_void(pb, 4 /* MaxBlockAdditionID */
+-                            + 3 /* BlockAdditionMapping */
+-                            + 4 /* BlockAddIDValue */
+-                            + 4 /* BlockAddIDType */);
+-        }
++        put_ebml_void(pb, mkv->reserve_video_track_space);
+     }
+ 
+     sd = av_packet_side_data_get(par->coded_side_data, par->nb_coded_side_data,
+@@ -2796,6 +2793,31 @@ static void mkv_write_blockadditional(EbmlWriter *writer, const uint8_t *buf,
+     ebml_writer_close_master(writer);
+ }
+ 
++static int mkv_simulate_blockadditional_header(AVFormatContext *s, int* remaining_video_track_space, uint64_t additional_type, uint64_t additional_id)
++{
++    int size = 0;
++    size += uint_size(MATROSKA_ID_BLKADDIDTYPE) + 1 + uint_size(additional_type);
++    size += uint_size(MATROSKA_ID_BLKADDIDVALUE) + 1 + uint_size(additional_id);
++    size += uint_size(MATROSKA_ID_TRACKBLKADDMAPPING) + uint_size(size);
++    if (size > *remaining_video_track_space || *remaining_video_track_space - size == 1) { /* min element full size is 2 so 1 byte is not something which can be let alone */
++        av_log(s, AV_LOG_WARNING, "Block addition mapping in track header is not written for type %"PRIu64" id %"PRIu64" due to lack of reserved bytes.\n", additional_type, additional_id);
++        return 0;
++    }
++    *remaining_video_track_space -= size;
++    return 1;
++}
++
++static void mkv_write_blockadditional_header(AVFormatContext *s, uint64_t additional_type, uint64_t additional_id)
++{
++    /* when you modify this function, adapt mkv_simulate_blockadditional_header accordingly */
++    MatroskaMuxContext *mkv = s->priv_data;
++    AVIOContext *writer = mkv->track.bc;
++    ebml_master mapping_master = start_ebml_master(writer, MATROSKA_ID_TRACKBLKADDMAPPING, 8);
++    put_ebml_uint(writer, MATROSKA_ID_BLKADDIDTYPE, additional_type);
++    put_ebml_uint(writer, MATROSKA_ID_BLKADDIDVALUE, additional_id);
++    end_ebml_master(writer, mapping_master);
++}
++
+ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
+                            AVIOContext *pb, const AVCodecParameters *par,
+                            mkv_track *track, const AVPacket *pkt,
+@@ -2807,7 +2829,7 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
+     size_t side_data_size;
+     uint64_t additional_id;
+     unsigned track_number = track->track_num;
+-    EBML_WRITER(12);
++    EBML_WRITER(11 + MAX_MATROSKA_BLOCK_ADD_ITU_T_T35);
+     int ret;
+ 
+     mkv->cur_block.track  = track;
+@@ -2882,6 +2904,7 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
+                                       MATROSKA_BLOCK_ADD_ID_ITU_T_T35);
+             track->max_blockaddid = FFMAX(track->max_blockaddid,
+                                           MATROSKA_BLOCK_ADD_ID_ITU_T_T35);
++            track->itu_t_t35_count = 1;
+         }
+     }
+ 
+@@ -3293,24 +3316,36 @@ after_cues:
+ 
+             for (unsigned i = 0; i < s->nb_streams; i++) {
+                 const mkv_track *track = &mkv->tracks[i];
++                int remaining_video_track_space = mkv->reserve_video_track_space;
++                int max_block_add_id_count = 0;
++                int max_block_add_id_size = 3 + uint_size(track->max_blockaddid);
++                int block_type_t35_count = 0;
+ 
+-                if (!track->max_blockaddid || !track->blockadditionmapping_offset)
++                if (!track->max_blockaddid)
+                     continue;
+ 
+-                // We reserved a single byte to write this value.
+-                av_assert0(track->max_blockaddid <= 0xFF);
++                /* check what is possible to write in the reserved space, in priority order */
++                for (int i = 0; i < track->itu_t_t35_count; i++) {
++                    block_type_t35_count += mkv_simulate_blockadditional_header(s, &remaining_video_track_space, MATROSKA_BLOCK_ADD_ID_TYPE_ITU_T_T35, MATROSKA_BLOCK_ADD_ID_TYPE_ITU_T_T35);
++                }                
++                if (remaining_video_track_space >= max_block_add_id_size && remaining_video_track_space != max_block_add_id_size + 1) { /* min element full size is 2 so 1 byte is not something which can be let alone */
++                    max_block_add_id_count++;
++                    remaining_video_track_space -= max_block_add_id_size;
++                }
+ 
++                /* write what is possible to write in the reserved space */
++                /* when you modify this part, adapt the check part above accordingly */
++                if (!track->blockadditionmapping_offset)
++                    continue;
+                 avio_seek(track_bc, track->blockadditionmapping_offset, SEEK_SET);
+-
+-                put_ebml_uint(track_bc, MATROSKA_ID_TRACKMAXBLKADDID,
+-                              track->max_blockaddid);
+-                if (track->max_blockaddid == MATROSKA_BLOCK_ADD_ID_ITU_T_T35) {
+-                    ebml_master mapping_master = start_ebml_master(track_bc, MATROSKA_ID_TRACKBLKADDMAPPING, 8);
+-                    put_ebml_uint(track_bc, MATROSKA_ID_BLKADDIDTYPE,
+-                                  MATROSKA_BLOCK_ADD_ID_TYPE_ITU_T_T35);
+-                    put_ebml_uint(track_bc, MATROSKA_ID_BLKADDIDVALUE,
+-                                  MATROSKA_BLOCK_ADD_ID_ITU_T_T35);
+-                    end_ebml_master(track_bc, mapping_master);
++                if (max_block_add_id_count) {
++                    put_ebml_uint(track_bc, MATROSKA_ID_TRACKMAXBLKADDID, track->max_blockaddid);
++                }
++                for (int i = 0; i < block_type_t35_count; i++) {
++                    mkv_write_blockadditional_header(s, MATROSKA_BLOCK_ADD_ID_TYPE_ITU_T_T35, MATROSKA_BLOCK_ADD_ID_ITU_T_T35);
++                }
++                if (remaining_video_track_space > 1) {
++                    put_ebml_void(track_bc, remaining_video_track_space);
+                 }
+             }
+         }
+@@ -3545,6 +3580,7 @@ static const AVCodecTag additional_subtitle_tags[] = {
+ #define FLAGS AV_OPT_FLAG_ENCODING_PARAM
+ static const AVOption options[] = {
+     { "reserve_index_space", "reserve a given amount of space (in bytes) at the beginning of the file for the index (cues)", OFFSET(reserve_cues_space), AV_OPT_TYPE_INT,   { .i64 = 0 },   0, INT_MAX,   FLAGS },
++    { "reserve_video_track_space", "reserve a given amount of space (in bytes) at the beginning of the file for the block additions (HDR, timecodes...)", OFFSET(reserve_video_track_space), AV_OPT_TYPE_INT, { .i64 = 15 }, 0, INT_MAX, FLAGS }, /* the number of block additions is not known in advance, so the default value strikes a balance between the size of the reserved header size and the maximum number of block additions that can be registered at the end of writing */
+     { "cues_to_front", "move Cues (the index) to the front by shifting data if necessary", OFFSET(move_cues_to_front), AV_OPT_TYPE_BOOL, { .i64 = 0}, 0, 1, FLAGS },
+     { "cluster_size_limit",  "store at most the provided amount of bytes in a cluster",                                     OFFSET(cluster_size_limit), AV_OPT_TYPE_INT  , { .i64 = -1 }, -1, INT_MAX,   FLAGS },
+     { "cluster_time_limit",  "store at most the provided number of milliseconds in a cluster",                               OFFSET(cluster_time_limit), AV_OPT_TYPE_INT64, { .i64 = -1 }, -1, INT64_MAX, FLAGS },
+-- 
+2.52.0
+

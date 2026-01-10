@@ -1,8 +1,8 @@
-From 101365e0cc84687329349b13ab258d04a8479063 Mon Sep 17 00:00:00 2001
+From 34c4ea3b423bd87a24e636e053ad067e7a2fe5b0 Mon Sep 17 00:00:00 2001
 From: Jerome Martinez <jerome@mediaarea.net>
 Date: Wed, 4 Jan 2023 14:32:46 +0100
-Subject: [PATCH 2/5] libavcodec/flacenc: force 32-bit output for 32-bit input
- (no downscale)
+Subject: [PATCH 02/18] libavcodec/flacenc: force 32-bit output for 32-bit
+ input (no downscale)
 
 Remove the need of -strict experimental for having a 32-bit output
 ---
@@ -10,7 +10,7 @@ Remove the need of -strict experimental for having a 32-bit output
  1 file changed, 7 deletions(-)
 
 diff --git a/libavcodec/flacenc.c b/libavcodec/flacenc.c
-index 3a9578f5cd..4bf92dbf68 100644
+index 48478749d9..76ffeeb620 100644
 --- a/libavcodec/flacenc.c
 +++ b/libavcodec/flacenc.c
 @@ -288,13 +288,6 @@ static av_cold int flac_encode_init(AVCodecContext *avctx)
@@ -28,5 +28,5 @@ index 3a9578f5cd..4bf92dbf68 100644
              avctx->bits_per_raw_sample = 32;
              s->bps_code = 7;
 -- 
-2.13.3.windows.1
+2.52.0
 

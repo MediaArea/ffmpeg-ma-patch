@@ -1,0 +1,156 @@
+From 4cb0baa43afb6df44bb1da918605b457b0c782b8 Mon Sep 17 00:00:00 2001
+From: Dave Rice <dave at dericed.com>
+Date: Mon, 30 Jun 2025 00:00:00 +0200
+Subject: [PATCH 10/18] 32-bit timecode to 64-bit RFC 5484 timecode functions
+
+---
+ libavutil/timecode.c | 104 +++++++++++++++++++++++++++++++++++++++++++
+ libavutil/timecode.h |  22 +++++++++
+ 2 files changed, 126 insertions(+)
+
+diff --git a/libavutil/timecode.c b/libavutil/timecode.c
+index b5352a3961..341a4fef98 100644
+--- a/libavutil/timecode.c
++++ b/libavutil/timecode.c
+@@ -243,3 +243,107 @@ int av_timecode_init_from_string(AVTimecode *tc, AVRational rate, const char *st
+ 
+     return av_timecode_init_from_components(tc, rate, flags, hh, mm, ss, ff, log_ctx);
+ }
++
++static int bcd_to_int(int bcd) {
++    return ((bcd >> 4) & 0xF) * 10 + (bcd & 0xF);
++}
++
++uint64_t av_timecode_expand_to_64bit(uint32_t tc32)
++{
++    uint64_t tc64 = 0;
++
++    int hours_bcd   =  tc32        & 0x3F;  // bits 0-5
++    int bgf1        = (tc32 >> 6)  & 0x1;   // bit 6
++    int bgf2        = (tc32 >> 7)  & 0x1;   // bit 7
++    int minutes_bcd = (tc32 >> 8)  & 0x7F;  // bits 8-14
++    int bgf0        = (tc32 >> 15) & 0x1;   // bit 15
++    int seconds_bcd = (tc32 >> 16) & 0x7F;  // bits 16-22
++    int frames_bcd  = (tc32 >> 24) & 0x3F;  // bits 24-29
++    int drop        = (tc32 >> 30) & 0x1;   // bit 30
++    int color       = (tc32 >> 31) & 0x1;   // bit 31
++
++    int hours   = bcd_to_int(hours_bcd);
++    int minutes = bcd_to_int(minutes_bcd);
++    int seconds = bcd_to_int(seconds_bcd);
++    int frames  = bcd_to_int(frames_bcd);
++
++    // Units and tens
++    int uh = hours   % 10, th = hours   / 10;
++    int um = minutes % 10, tm = minutes / 10;
++    int us = seconds % 10, ts = seconds / 10;
++    int uf = frames  % 10, tf = frames  / 10;
++
++    // Assign bits as per RFC 5484 layout
++    tc64 |= (uint64_t)(uf & 0xF) << 0;   // Units of frames
++    tc64 |= 0                    << 4;   // First binary group
++    tc64 |= (uint64_t)(tf & 0x3) << 8;   // Tens of frames (2 bits)
++    tc64 |= (uint64_t)drop       << 10;  // Drop frame flag
++    tc64 |= (uint64_t)color      << 11;  // Color frame flag
++    tc64 |= 0                    << 12;  // Second binary group
++
++    tc64 |= (uint64_t)(us & 0xF) << 16;  // Units of seconds
++    tc64 |= 0                    << 20;  // Third binary group
++    tc64 |= (uint64_t)(ts & 0x7) << 24;  // Tens of seconds
++    tc64 |= 0                    << 27;  // Polarity correction
++    tc64 |= 0                    << 28;  // Fourth binary group
++
++    tc64 |= (uint64_t)(um & 0xF) << 32;  // Units of minutes
++    tc64 |= (uint64_t)0          << 36;  // Fifth binary group
++    tc64 |= (uint64_t)(tm & 0x7) << 40;  // Tens of minutes
++    tc64 |= (uint64_t)bgf0       << 43;  // BGF0
++    tc64 |= (uint64_t)0          << 44;  // Sixth binary group
++
++    tc64 |= (uint64_t)(uh & 0xF) << 48;  // Units of hours
++    tc64 |= (uint64_t)0          << 52;  // Seventh binary group
++    tc64 |= (uint64_t)(th & 0x3) << 56;  // Tens of hours
++    tc64 |= (uint64_t)bgf1       << 58;  // BGF1
++    tc64 |= (uint64_t)bgf2       << 59;  // BGF2
++    tc64 |= (uint64_t)0          << 60;  // Eighth binary group
++
++    return tc64;
++}
++
++static int int_to_bcd(int val) {
++    return ((val / 10) << 4) | (val % 10);
++}
++
++uint32_t av_timecode_parse_from_64bit(uint64_t tc64)
++{
++    uint32_t tc32 = 0;
++
++    int uf   = (tc64 >> 0)  & 0xF;   // Ones of frames
++    int tf   = (tc64 >> 8)  & 0x3;   // Tens of frames
++    int drop = (tc64 >> 10) & 0x1;
++    int color= (tc64 >> 11) & 0x1;
++
++    int us   = (tc64 >> 16) & 0xF;   // Ones of seconds
++    int ts   = (tc64 >> 24) & 0x7;   // Tens of seconds
++
++    int um   = (tc64 >> 32) & 0xF;   // Ones of minutes
++    int tm   = (tc64 >> 40) & 0x7;   // Tens of minutes
++    int bgf0 = (tc64 >> 43) & 0x1;
++
++    int uh   = (tc64 >> 48) & 0xF;   // Ones of hours
++    int th   = (tc64 >> 56) & 0x3;   // Tens of hours
++    int bgf1 = (tc64 >> 58) & 0x1;
++    int bgf2 = (tc64 >> 59) & 0x1;
++
++    int hours   = int_to_bcd(th * 10 + uh);
++    int minutes = int_to_bcd(tm * 10 + um);
++    int seconds = int_to_bcd(ts * 10 + us);
++    int frames  = int_to_bcd(tf * 10 + uf);
++
++    // Assemble tc32 using the FFmpeg SMPTE 32-bit format
++    tc32 |= (hours & 0x3F)        << 0;   // bits 0-5: hours (BCD)
++    tc32 |= (bgf1  & 0x1)         << 6;   // bit 6: BGF1
++    tc32 |= (bgf2  & 0x1)         << 7;   // bit 7: BGF2 (or FIELD)
++    tc32 |= (minutes & 0x7F)      << 8;   // bits 8-14: minutes (BCD)
++    tc32 |= (bgf0  & 0x1)         << 15;  // bit 15: BGF0
++    tc32 |= (seconds & 0x7F)      << 16;  // bits 16-22: seconds (BCD)
++    tc32 |= 0                     << 23;  // bit 23: FIELD (set to 0)
++    tc32 |= (frames  & 0x3F)      << 24;  // bits 24-29: frames (BCD)
++    tc32 |= (drop    & 0x1)       << 30;  // bit 30: drop frame flag
++    tc32 |= (color   & 0x1)       << 31;  // bit 31: color frame flag
++
++    return tc32;
++}
+diff --git a/libavutil/timecode.h b/libavutil/timecode.h
+index fe0fc83576..81713a9adf 100644
+--- a/libavutil/timecode.h
++++ b/libavutil/timecode.h
+@@ -196,4 +196,26 @@ int av_timecode_init_from_string(AVTimecode *tc, AVRational rate, const char *st
+  */
+ int av_timecode_check_frame_rate(AVRational rate);
+ 
++/**
++ * Convert a 32-bit SMPTE 12M timecode to 64-bit SMPTE 12M/RFC 5484 format.
++ *
++ * This maps the timecode as described in RFC 5484 Section 6.2,
++ * expanding BCD-encoded time values into bit fields without the sync word.
++ *
++ * @param tc32  The 32-bit SMPTE timecode (from DeckLink or av_timecode_get_smpte)
++ * @return      The 64-bit SMPTE 12M timecode format (without sync word)
++ */
++uint64_t av_timecode_expand_to_64bit(uint32_t tc32);
++
++/**
++ * Convert a 64-bit SMPTE 12M/RFC 5484 timecode to 32-bit SMPTE format.
++ *
++ * This reconstructs the packed 32-bit SMPTE timecode (DeckLink-style or FFmpeg output)
++ * from a full 64-bit representation.
++ *
++ * @param tc64 The 64-bit timecode value in RFC 5484 / SMPTE 12M format (without sync word)
++ * @return     A 32-bit SMPTE timecode
++ */
++uint32_t av_timecode_parse_from_64bit(uint64_t tc64);
++
+ #endif /* AVUTIL_TIMECODE_H */
+-- 
+2.52.0
+

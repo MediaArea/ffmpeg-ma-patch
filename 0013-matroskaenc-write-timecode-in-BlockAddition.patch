@@ -1,0 +1,119 @@
+From e53c563cbe54310370d18f20fe074ac3808ca1b8 Mon Sep 17 00:00:00 2001
+From: Jerome Martinez <jerome@mediaarea.net>
+Date: Thu, 4 Sep 2025 20:18:08 +0200
+Subject: [PATCH 13/18] matroskaenc: write timecode in BlockAddition
+
+---
+ libavformat/matroskaenc.c | 45 ++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 44 insertions(+), 1 deletion(-)
+
+diff --git a/libavformat/matroskaenc.c b/libavformat/matroskaenc.c
+index 24e0a33c55..32df6211d3 100644
+--- a/libavformat/matroskaenc.c
++++ b/libavformat/matroskaenc.c
+@@ -60,6 +60,7 @@
+ #include "libavutil/rational.h"
+ #include "libavutil/samplefmt.h"
+ #include "libavutil/stereo3d.h"
++#include "libavutil/timecode.h"
+ 
+ #include "libavcodec/av1.h"
+ #include "libavcodec/bytestream.h"
+@@ -81,6 +82,9 @@
+ #define MAX_SUPPORTED_EBML_LENGTH FFMIN(MAX_EBML_LENGTH, INT_MAX)
+ 
+ #define MAX_MATROSKA_BLOCK_ADD_ITU_T_T35 1 /* currently only 1 such element is supported */
++#define MAX_MATROSKA_BLOCK_ADD_SMPTE_12M 64 /* balance between intermediate buffer size and reality of non existence if so many timecodes streams for one content */
++
++#define MATROSKA_BLOCK_ADD_ID_SMPTE_12M 101 /* arbitrary value */
+ 
+ #define MODE_MATROSKAv2 0x01
+ #define MODE_WEBM       0x02
+@@ -199,6 +203,7 @@ typedef struct mkv_track {
+     int64_t         duration_offset;
+     uint64_t        max_blockaddid;
+     int             itu_t_t35_count;
++    int             timecode_count;
+     int64_t         blockadditionmapping_offset;
+     int             codecpriv_offset;
+     unsigned        codecpriv_size;     ///< size reserved for CodecPrivate excluding header+length field
+@@ -2825,11 +2830,12 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
+                            int force_blockgroup, int64_t relative_packet_pos)
+ {
+     uint8_t t35_buf[6 + AV_HDR_PLUS_MAX_PAYLOAD_SIZE];
++    uint8_t timecode_buf[MAX_MATROSKA_BLOCK_ADD_SMPTE_12M][8];
+     uint8_t *side_data;
+     size_t side_data_size;
+     uint64_t additional_id;
+     unsigned track_number = track->track_num;
+-    EBML_WRITER(11 + MAX_MATROSKA_BLOCK_ADD_ITU_T_T35);
++    EBML_WRITER(11 + MAX_MATROSKA_BLOCK_ADD_ITU_T_T35 + MAX_MATROSKA_BLOCK_ADD_SMPTE_12M);
+     int ret;
+ 
+     mkv->cur_block.track  = track;
+@@ -2908,6 +2914,36 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
+         }
+     }
+ 
++    // Extract timecode from side data and write as BlockAdditional
++    if (par->codec_type == AVMEDIA_TYPE_VIDEO) {
++        side_data = av_packet_get_side_data(pkt, AV_PKT_DATA_S12M_TIMECODE, &side_data_size);
++        if (side_data && side_data_size >= sizeof(uint64_t)) {
++            uint64_t *side_data_64 = (uint64_t*)side_data;
++            uint64_t count = side_data_64[0];
++            if (side_data_size / sizeof(uint64_t) - 1 >= count ) {
++                uint64_t written_count = count;
++                side_data_64++;
++                if (count > MAX_MATROSKA_BLOCK_ADD_SMPTE_12M) {
++                    if (count > track->timecode_count) {
++                        av_log(logctx, AV_LOG_WARNING, "Too many SMPTE timecode streams in side data, discarding %"PRIu64" timecode streams.\n", count - MAX_MATROSKA_BLOCK_ADD_SMPTE_12M);
++                    }
++                    written_count = MAX_MATROSKA_BLOCK_ADD_SMPTE_12M;
++                }
++                for (uint64_t i = 0; i < written_count; i++) {
++                    uint64_t tc = side_data_64[i];
++                    uint8_t *payload = timecode_buf[i];
++                    AV_WB64(payload, tc);
++                    av_log(logctx, AV_LOG_DEBUG, "Writing SMPTE timecode from side data, pos %"PRIu64", to BlockAdditional: 0x%016lX (RFC 5484)\n", i + 1, tc);
++
++                    int blockaddid = MATROSKA_BLOCK_ADD_ID_SMPTE_12M + i;
++                    mkv_write_blockadditional(&writer, payload, 8, blockaddid);
++                    track->max_blockaddid = FFMAX(track->max_blockaddid, blockaddid);
++                }
++                track->timecode_count = FFMAX(track->timecode_count, count);
++            }
++        }
++    }
++
+     ebml_writer_close_or_discard_master(&writer);
+ 
+     if (!force_blockgroup && writer.nb_elements == 2) {
+@@ -3320,11 +3356,15 @@ after_cues:
+                 int max_block_add_id_count = 0;
+                 int max_block_add_id_size = 3 + uint_size(track->max_blockaddid);
+                 int block_type_t35_count = 0;
++                int block_type_timecode_count = 0;
+ 
+                 if (!track->max_blockaddid)
+                     continue;
+ 
+                 /* check what is possible to write in the reserved space, in priority order */
++                for (int i = 0; i < track->timecode_count; i++) {
++                    block_type_timecode_count += mkv_simulate_blockadditional_header(s, &remaining_video_track_space, MATROSKA_BLOCK_ADD_ID_TYPE_SMPTE_12M, MATROSKA_BLOCK_ADD_ID_SMPTE_12M + i);
++                }
+                 for (int i = 0; i < track->itu_t_t35_count; i++) {
+                     block_type_t35_count += mkv_simulate_blockadditional_header(s, &remaining_video_track_space, MATROSKA_BLOCK_ADD_ID_TYPE_ITU_T_T35, MATROSKA_BLOCK_ADD_ID_TYPE_ITU_T_T35);
+                 }                
+@@ -3344,6 +3384,9 @@ after_cues:
+                 for (int i = 0; i < block_type_t35_count; i++) {
+                     mkv_write_blockadditional_header(s, MATROSKA_BLOCK_ADD_ID_TYPE_ITU_T_T35, MATROSKA_BLOCK_ADD_ID_ITU_T_T35);
+                 }
++                for (int i = 0; i < block_type_timecode_count; i++) {
++                    mkv_write_blockadditional_header(s, MATROSKA_BLOCK_ADD_ID_TYPE_SMPTE_12M, MATROSKA_BLOCK_ADD_ID_SMPTE_12M + i);
++                }
+                 if (remaining_video_track_space > 1) {
+                     put_ebml_void(track_bc, remaining_video_track_space);
+                 }
+-- 
+2.52.0
+
