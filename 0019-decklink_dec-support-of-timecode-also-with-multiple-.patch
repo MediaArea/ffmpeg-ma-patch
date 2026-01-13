@@ -1,0 +1,127 @@
+From e12b1749040c29fe44da4e1fddcbf896651aa944 Mon Sep 17 00:00:00 2001
+From: Jerome Martinez <jerome@mediaarea.net>
+Date: Tue, 13 Jan 2026 00:18:59 +0100
+Subject: [PATCH] decklink_dec: support of timecode also with multiple output
+
+---
+ fftools/ffmpeg.c       | 14 ++++++++++++++
+ fftools/ffmpeg_demux.c | 15 ++++++++++++---
+ fftools/ffmpeg_mux.c   | 10 +++++++++-
+ fftools/ffmpeg_utils.h |  4 +++-
+ 4 files changed, 38 insertions(+), 5 deletions(-)
+
+diff --git a/fftools/ffmpeg.c b/fftools/ffmpeg.c
+index c2c85d46bd..0b7d58f97f 100644
+--- a/fftools/ffmpeg.c
++++ b/fftools/ffmpeg.c
+@@ -746,7 +746,21 @@ static void print_stream_maps(void)
+         }
+     }
+ 
++    for (size_t i = 0; i < SD_OST_MAX; i++) {
++        sd_ost[i] = 0;
++    }
++
+     for (OutputStream *ost = ost_iter(NULL); ost; ost = ost_iter(ost)) {
++        for (size_t i = 0; i < SD_OST_MAX; i++) {
++            if (sd_ost[i]) {
++                continue;
++            }
++            if (i < SD_OST_MAX) {
++                sd_ost[i] = ost;
++            }
++            break;
++        }
++
+         if (ost->attachment_filename) {
+             /* an attached file */
+             av_log(NULL, AV_LOG_INFO, "  File %s -> Stream #%d:%d\n",
+diff --git a/fftools/ffmpeg_demux.c b/fftools/ffmpeg_demux.c
+index 6f5a2e4e5e..e5fda31f91 100644
+--- a/fftools/ffmpeg_demux.c
++++ b/fftools/ffmpeg_demux.c
+@@ -782,7 +782,8 @@ static int side_data_queue(const AVPacket *pkt, SideDataQueue *queues, int index
+     return 0;
+ }
+ 
+-SideDataQueue sd_queues[1]; //TODO: by stream_index
++SideDataQueue sd_queues[SD_OST_MAX][1]; //TODO: by stream_index
++void* sd_ost[SD_OST_MAX];
+ 
+ static int input_thread(void *arg)
+ {
+@@ -807,6 +808,10 @@ static int input_thread(void *arg)
+     // Find the video stream index
+     int video_stream_index = -1;
+     int nb_streams = f->ctx->nb_streams;
++    int sd_ost_max = SD_OST_MAX;
++    while (sd_ost_max && !sd_ost[sd_ost_max - 1]) {
++        sd_ost_max--;
++    }
+     for (int i = 0; i < nb_streams; i++) {
+         AVStream *st = f->ctx->streams[i];
+         if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+@@ -815,7 +820,9 @@ static int input_thread(void *arg)
+                 video_stream_index = -1;
+                 break;
+             }
+-            side_data_queue_init(&sd_queues[0]); //TODO: by stream_index
++            for (size_t i = 0; i < sd_ost_max; i++) {
++                side_data_queue_init(&sd_queues[i][0]); //TODO: by stream_index
++            }
+             video_stream_index = i;
+         }
+     }
+@@ -887,10 +894,12 @@ static int input_thread(void *arg)
+         }
+ 
+         if (dt.pkt_demux->side_data_elems && dt.pkt_demux->stream_index == video_stream_index) {
+-            int ret = side_data_queue(dt.pkt_demux, sd_queues, 0); //TODO: by stream_index
++            for (size_t i = 0; i < sd_ost_max; i++) {
++            int ret = side_data_queue(dt.pkt_demux, sd_queues[i], 0); //TODO: by stream_index
+             if (ret < 0) {
+                 av_log(d, AV_LOG_ERROR, "Error during side data queue: %s\n", av_err2str(ret));
+             }
++            }
+         }
+ 
+         ret = input_packet_process(d, dt.pkt_demux, &send_flags);
+diff --git a/fftools/ffmpeg_mux.c b/fftools/ffmpeg_mux.c
+index 1f7ff737e5..70c6db765d 100644
+--- a/fftools/ffmpeg_mux.c
++++ b/fftools/ffmpeg_mux.c
+@@ -277,7 +277,15 @@ static int write_packet(Muxer *mux, OutputStream *ost, AVPacket *pkt)
+ 
+     AVStream *st = s->streams[pkt->stream_index];
+     if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+-        side_data_fill(pkt, sd_queues, 0); //TODO: by stream_index
++        int i = 0;
++        for (; i < SD_OST_MAX; i++) {
++            if (ost == sd_ost[i]) {
++                break;
++            }
++        }
++        if (i < SD_OST_MAX) {
++            side_data_fill(pkt, sd_queues[i], 0); //TODO: by stream_index
++        }
+     }
+ 
+     fs = filesize(s->pb);
+diff --git a/fftools/ffmpeg_utils.h b/fftools/ffmpeg_utils.h
+index 693f4fc441..41fa7ceded 100644
+--- a/fftools/ffmpeg_utils.h
++++ b/fftools/ffmpeg_utils.h
+@@ -48,7 +48,9 @@ typedef struct SideDataQueue {
+     pthread_cond_t cond;
+ } SideDataQueue;
+ 
+-extern SideDataQueue sd_queues[1]; //TODO: by stream_index
++#define SD_OST_MAX 8
++extern SideDataQueue sd_queues[SD_OST_MAX][1]; //TODO: by stream_index
++extern void* sd_ost[SD_OST_MAX];
+ 
+ typedef struct Timestamp {
+     int64_t    ts;
+-- 
+2.52.0
+
