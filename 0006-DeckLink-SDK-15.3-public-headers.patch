@@ -1,7 +1,7 @@
-From b74d21cba92df440ab535b3d5fb15558d7ea4d5a Mon Sep 17 00:00:00 2001
+From ac8f512040ba54616d7f828447cf626bcb2d4f96 Mon Sep 17 00:00:00 2001
 From: Maxime Gervais <gervais.maxime@gmail.com>
 Date: Tue, 2 Dec 2025 16:53:06 +0100
-Subject: [PATCH 06/18] DeckLink SDK 15.3 public headers
+Subject: [PATCH 06/19] DeckLink SDK 15.3 public headers
 
 ---
  DeckLinkSDK/Linux/include/DeckLinkAPI.h       | 1621 ++++++++++++++++

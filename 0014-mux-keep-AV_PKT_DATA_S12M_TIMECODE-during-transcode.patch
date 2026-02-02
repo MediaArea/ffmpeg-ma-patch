@@ -1,7 +1,7 @@
-From 0b8f641812194c36a1d007567167ec77af3aeca4 Mon Sep 17 00:00:00 2001
+From 17f8a89d1a0c5e21fd477004bcbc737acaab1f90 Mon Sep 17 00:00:00 2001
 From: Jerome Martinez <jerome@mediaarea.net>
 Date: Fri, 21 Nov 2025 12:38:04 +0100
-Subject: [PATCH 14/18] mux: keep AV_PKT_DATA_S12M_TIMECODE during transcode
+Subject: [PATCH 14/19] mux: keep AV_PKT_DATA_S12M_TIMECODE during transcode
 
 ---
  fftools/ffmpeg_demux.c | 86 ++++++++++++++++++++++++++++++++++++++++++
@@ -10,7 +10,7 @@ Subject: [PATCH 14/18] mux: keep AV_PKT_DATA_S12M_TIMECODE during transcode
  3 files changed, 175 insertions(+)
 
 diff --git a/fftools/ffmpeg_demux.c b/fftools/ffmpeg_demux.c
-index 193967fce1..bf26be66d1 100644
+index cb79dd7611..6f5a2e4e5e 100644
 --- a/fftools/ffmpeg_demux.c
 +++ b/fftools/ffmpeg_demux.c
 @@ -721,6 +721,69 @@ static int demux_thread_init(DemuxThreadContext *dt)

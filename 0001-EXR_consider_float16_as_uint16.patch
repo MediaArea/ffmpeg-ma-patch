@@ -1,7 +1,7 @@
-From b79623b98c9418cc1beaa5014e595ed6f77a9aa2 Mon Sep 17 00:00:00 2001
+From 5356e99c5ed51189caacd7c861d39ded221b5071 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?J=C3=A9r=C3=B4me=20Martinez?= <jerome@mediaarea.net>
 Date: Wed, 14 Oct 2020 08:02:22 +0200
-Subject: [PATCH 01/18] EXR_consider_float16_as_uint16
+Subject: [PATCH 01/19] EXR_consider_float16_as_uint16
 
 ---
  libavcodec/exr.c | 32 +++++++++++++++++++++++++++++---
