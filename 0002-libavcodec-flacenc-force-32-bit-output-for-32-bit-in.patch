@@ -1,7 +1,7 @@
-From 34c4ea3b423bd87a24e636e053ad067e7a2fe5b0 Mon Sep 17 00:00:00 2001
+From 2cf2181b60046fea63b805718d9e1ae92adf29a4 Mon Sep 17 00:00:00 2001
 From: Jerome Martinez <jerome@mediaarea.net>
 Date: Wed, 4 Jan 2023 14:32:46 +0100
-Subject: [PATCH 02/18] libavcodec/flacenc: force 32-bit output for 32-bit
+Subject: [PATCH 02/19] libavcodec/flacenc: force 32-bit output for 32-bit
  input (no downscale)
 
 Remove the need of -strict experimental for having a 32-bit output

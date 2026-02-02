@@ -1,7 +1,7 @@
-From 28050a2220ccabb69355b4ad6baa374265c78376 Mon Sep 17 00:00:00 2001
+From a22eaca94d0c2eb3cd35923a7a07346adb0dd005 Mon Sep 17 00:00:00 2001
 From: Maxime Gervais <gervais.maxime@gmail.com>
 Date: Wed, 3 Dec 2025 09:27:27 +0100
-Subject: [PATCH 16/18] decklink: fix missing IID_IUnknown
+Subject: [PATCH 16/19] decklink: fix missing IID_IUnknown
 
 ---
  libavdevice/decklink_dec.cpp | 2 ++
