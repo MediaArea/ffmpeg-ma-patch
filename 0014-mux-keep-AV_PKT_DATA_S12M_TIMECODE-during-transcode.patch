@@ -1,7 +1,7 @@
 From 17f8a89d1a0c5e21fd477004bcbc737acaab1f90 Mon Sep 17 00:00:00 2001
 From: Jerome Martinez <jerome@mediaarea.net>
 Date: Fri, 21 Nov 2025 12:38:04 +0100
-Subject: [PATCH 14/19] mux: keep AV_PKT_DATA_S12M_TIMECODE during transcode
+Subject: [PATCH 14/18] mux: keep AV_PKT_DATA_S12M_TIMECODE during transcode
 
 ---
  fftools/ffmpeg_demux.c | 86 ++++++++++++++++++++++++++++++++++++++++++

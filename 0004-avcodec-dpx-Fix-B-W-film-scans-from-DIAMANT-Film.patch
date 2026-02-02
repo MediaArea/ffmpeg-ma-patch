@@ -1,7 +1,7 @@
 From c09421de91a3ca300dfe903a14dfd728749b09bb Mon Sep 17 00:00:00 2001
 From: Jerome Martinez <jerome@mediaarea.net>
 Date: Thu, 4 Jul 2024 10:45:57 +0200
-Subject: [PATCH 04/19] avcodec/dpx: Fix B&W film scans from DIAMANT-Film
+Subject: [PATCH 04/18] avcodec/dpx: Fix B&W film scans from DIAMANT-Film
 
 ---
  libavcodec/dpx.c | 1 +

@@ -1,7 +1,7 @@
 From 8f7c53e54877d1964b9e9aa7cdb623bd7226708c Mon Sep 17 00:00:00 2001
 From: Jerome Martinez <jerome@mediaarea.net>
 Date: Thu, 4 Dec 2025 17:31:32 +0100
-Subject: [PATCH 19/19] decklink_dec: support labels
+Subject: [PATCH 19/18] decklink_dec: support labels
 
 ---
  fftools/ffprobe.c            |  27 +++++++--
@@ -65,14 +65,14 @@ index 92122e5..b52da6e 100644
              }
              avtext_print_section_footer(tfc);
 diff --git a/libavdevice/decklink_dec.cpp b/libavdevice/decklink_dec.cpp
-index 18596af..4c213f7 100644
+index 8727e9d..1bdb3d2 100644
 --- a/libavdevice/decklink_dec.cpp
 +++ b/libavdevice/decklink_dec.cpp
-@@ -681,7 +681,24 @@ static int64_t get_pkt_pts(IDeckLinkVideoInputFrame *videoFrame,
+@@ -710,7 +710,24 @@ static int64_t get_pkt_pts(IDeckLinkVideoInputFrame_v14_2_1 *videoFrame,
      return pts;
  }
  
--static int get_bmd_timecode(AVFormatContext *avctx, AVTimecode *tc, AVRational frame_rate, BMDTimecodeFormat tc_format, IDeckLinkVideoInputFrame *videoFrame)
+-static int get_bmd_timecode(AVFormatContext *avctx, AVTimecode *tc, AVRational frame_rate, BMDTimecodeFormat tc_format, IDeckLinkVideoInputFrame_v14_2_1 *videoFrame)
 +static const char *BMDTimecodeFormat_to_label(BMDTimecodeFormat tc_format)
 +{
 +    switch(tc_format) {
@@ -94,7 +94,7 @@ index 18596af..4c213f7 100644
  {
      IDeckLinkTimecode *timecode;
      int ret = AVERROR(ENOENT);
-@@ -691,6 +708,7 @@ static int get_bmd_timecode(AVFormatContext *avctx, AVTimecode *tc, AVRational f
+@@ -720,6 +737,7 @@ static int get_bmd_timecode(AVFormatContext *avctx, AVTimecode *tc, AVRational f
      int hfr = 0;
  #endif
      if (videoFrame->GetTimecode(tc_format, &timecode) == S_OK) {
@@ -102,11 +102,11 @@ index 18596af..4c213f7 100644
          uint8_t hh, mm, ss, ff;
          if (timecode->GetComponents(&hh, &mm, &ss, &ff) == S_OK) {
              int flags = (timecode->GetFlags() & bmdTimecodeIsDropFrame) ? AV_TIMECODE_FLAG_DROPFRAME : 0;
-@@ -703,53 +721,39 @@ static int get_bmd_timecode(AVFormatContext *avctx, AVTimecode *tc, AVRational f
+@@ -732,53 +750,39 @@ static int get_bmd_timecode(AVFormatContext *avctx, AVTimecode *tc, AVRational f
      return ret;
  }
  
--static int get_frame_timecode(AVFormatContext *avctx, decklink_ctx *ctx, AVTimecode *tc, IDeckLinkVideoInputFrame *videoFrame)
+-static int get_frame_timecode(AVFormatContext *avctx, decklink_ctx *ctx, AVTimecode *tc, IDeckLinkVideoInputFrame_v14_2_1 *videoFrame)
 +static int get_frame_timecode(AVFormatContext *avctx, decklink_ctx *ctx, AVTimecode *tc, const char **tc_kind, IDeckLinkVideoInputFrame_v14_2_1 *videoFrame)
  {
      AVRational frame_rate = ctx->video_st->r_frame_rate;
@@ -170,7 +170,7 @@ index 18596af..4c213f7 100644
      }
      return ret >= 0;
  }
-@@ -847,7 +851,8 @@ HRESULT decklink_input_callback::VideoInputFrameArrived(
+@@ -876,7 +880,8 @@ HRESULT decklink_input_callback::VideoInputFrameArrived(
              // Handle Timecode (if requested)
              if (ctx->tc_format) {
                  AVTimecode tcr[8];
@@ -180,7 +180,7 @@ index 18596af..4c213f7 100644
                  if (count > 0) {
                      char tcstr[AV_TIMECODE_STR_SIZE];
                      const char *tc = av_timecode_make_string(&tcr[0], tcstr, 0);
-@@ -856,13 +861,9 @@ HRESULT decklink_input_callback::VideoInputFrameArrived(
+@@ -885,13 +890,9 @@ HRESULT decklink_input_callback::VideoInputFrameArrived(
                          uint8_t* packed_metadata;
  
                          if (av_cmp_q(ctx->video_st->r_frame_rate, av_make_q(60, 1)) < 1) {

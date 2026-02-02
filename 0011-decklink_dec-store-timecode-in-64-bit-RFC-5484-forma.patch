@@ -1,7 +1,7 @@
 From 4207c2b3142932a11a894add19fad173408ab7c8 Mon Sep 17 00:00:00 2001
 From: Jerome Martinez <jerome@mediaarea.net>
 Date: Wed, 27 Aug 2025 13:36:36 +0200
-Subject: [PATCH 11/19] decklink_dec: store timecode in 64-bit RFC 5484 format
+Subject: [PATCH 11/18] decklink_dec: store timecode in 64-bit RFC 5484 format
 
 ---
  fftools/ffprobe.c            | 4 ++--

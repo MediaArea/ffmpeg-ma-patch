@@ -1,7 +1,7 @@
 From 483a4d96fb7f0663331d0c6750880974f2a287e7 Mon Sep 17 00:00:00 2001
 From: Dave Rice <dave at dericed.com>
 Date: Mon, 30 Jun 2025 00:00:00 +0200
-Subject: [PATCH 10/19] 32-bit timecode to 64-bit RFC 5484 timecode functions
+Subject: [PATCH 10/18] 32-bit timecode to 64-bit RFC 5484 timecode functions
 
 ---
  libavutil/timecode.c | 104 +++++++++++++++++++++++++++++++++++++++++++
