@@ -1,7 +1,7 @@
-From 28050a2220ccabb69355b4ad6baa374265c78376 Mon Sep 17 00:00:00 2001
+From a22eaca94d0c2eb3cd35923a7a07346adb0dd005 Mon Sep 17 00:00:00 2001
 From: Maxime Gervais <gervais.maxime@gmail.com>
 Date: Wed, 3 Dec 2025 09:27:27 +0100
-Subject: [PATCH 16/18] decklink: fix missing IID_IUnknown
+Subject: [PATCH 16/19] decklink: fix missing IID_IUnknown
 
 ---
  libavdevice/decklink_dec.cpp | 2 ++
@@ -9,12 +9,12 @@ Subject: [PATCH 16/18] decklink: fix missing IID_IUnknown
  2 files changed, 4 insertions(+)
 
 diff --git a/libavdevice/decklink_dec.cpp b/libavdevice/decklink_dec.cpp
-index 8727e9d389..370efa9a4b 100644
+index 167243b..18596af 100644
 --- a/libavdevice/decklink_dec.cpp
 +++ b/libavdevice/decklink_dec.cpp
-@@ -37,6 +37,8 @@ extern "C" {
- #include <DeckLinkAPI_v14_2_1.h>
- #endif
+@@ -33,6 +33,8 @@ extern "C" {
+ 
+ #include <DeckLinkAPI.h>
  
 +#define IID_IUnknown (REFIID){0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xC0,0x00,0x00,0x00,0x00,0x00,0x00,0x46}
 +
@@ -22,12 +22,12 @@ index 8727e9d389..370efa9a4b 100644
  #include "config.h"
  #include "libavcodec/packet_internal.h"
 diff --git a/libavdevice/decklink_enc.cpp b/libavdevice/decklink_enc.cpp
-index d2e246c818..eff788dce0 100644
+index cb8f917..acb4c1e 100644
 --- a/libavdevice/decklink_enc.cpp
 +++ b/libavdevice/decklink_enc.cpp
-@@ -34,6 +34,8 @@ extern "C" {
- #include <DeckLinkAPI_v14_2_1.h>
- #endif
+@@ -30,6 +30,8 @@ extern "C" {
+ 
+ #include <DeckLinkAPI.h>
  
 +#define IID_IUnknown (REFIID){0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xC0,0x00,0x00,0x00,0x00,0x00,0x00,0x46}
 +
