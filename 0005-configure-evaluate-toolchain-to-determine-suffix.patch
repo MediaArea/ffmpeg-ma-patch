@@ -1,7 +1,7 @@
-From 8e3f6553a97a1820d794f11555a0add5cb0e2803 Mon Sep 17 00:00:00 2001
+From 0c81b4c59b1afd0c39b07f364581e7d5e8a2295d Mon Sep 17 00:00:00 2001
 From: Jerome Martinez <jerome@mediaarea.net>
 Date: Tue, 2 Dec 2025 12:29:03 +0100
-Subject: [PATCH 05/18] configure evaluate toolchain to determine suffix
+Subject: [PATCH 05/19] configure evaluate toolchain to determine suffix
 
 ---
  configure | 8 ++++++--
