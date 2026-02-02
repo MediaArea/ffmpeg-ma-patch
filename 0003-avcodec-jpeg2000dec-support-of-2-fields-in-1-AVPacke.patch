@@ -1,7 +1,7 @@
 From 3b39c536be1dde63081da43e953b407f68210131 Mon Sep 17 00:00:00 2001
 From: Jerome Martinez <jerome@mediaarea.net>
 Date: Tue, 20 Feb 2024 16:04:11 +0100
-Subject: [PATCH 03/19] avcodec/jpeg2000dec: support of 2 fields in 1 AVPacket
+Subject: [PATCH 03/18] avcodec/jpeg2000dec: support of 2 fields in 1 AVPacket
 
 ---
  libavcodec/jpeg2000dec.c | 78 +++++++++++++++++++++++++++++++++++-----

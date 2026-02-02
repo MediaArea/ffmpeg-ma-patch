@@ -1,7 +1,7 @@
 From 6f82af6baa5cc98e30696d19a99a623a26ee9e8e Mon Sep 17 00:00:00 2001
 From: Jerome Martinez <jerome@mediaarea.net>
 Date: Wed, 3 Sep 2025 21:33:50 +0200
-Subject: [PATCH 08/19] matroskaenc: reserve_video_track_space option
+Subject: [PATCH 08/18] matroskaenc: reserve_video_track_space option
 
 The number of block additions is not known in advance, so we need to be able to set more reserved space for when we add a lot more block additions.
 It is also possible to reduce the reserved space (or even eliminate it) for those who want to keep the smallest header possible.

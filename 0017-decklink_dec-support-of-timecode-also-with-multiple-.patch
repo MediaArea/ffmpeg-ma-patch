@@ -1,7 +1,7 @@
 From 8e3befae93cf7dcf96971b28ef35af66fedb85e1 Mon Sep 17 00:00:00 2001
 From: Jerome Martinez <jerome@mediaarea.net>
 Date: Tue, 13 Jan 2026 00:18:59 +0100
-Subject: [PATCH 18/19] decklink_dec: support of timecode also with multiple
+Subject: [PATCH 18/18] decklink_dec: support of timecode also with multiple
  output
 
 ---

@@ -1,7 +1,7 @@
 From 018efa64705cab983664179748e50ef00fb368c3 Mon Sep 17 00:00:00 2001
 From: Jerome Martinez <jerome@mediaarea.net>
 Date: Sun, 6 Jul 2025 15:12:22 +0200
-Subject: [PATCH 17/19] matroskadec/enc: support of TimeCodeXml input
+Subject: [PATCH 17/18] matroskadec/enc: support of TimeCodeXml input
 
 ---
  libavformat/matroskaenc.c | 1195 ++++++++++++++++++++++++++++++++++++-

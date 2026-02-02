@@ -1,0 +1,365 @@
+From 27e94281d1c880b4cae28738e35c0d6f9a58f06b Mon Sep 17 00:00:00 2001
+From: Thomas Gritzan <phygon@gmx.de>
+Date: Thu, 27 Nov 2025 02:30:25 +0100
+Subject: [PATCH] libavdevice/decklink: add support for DeckLink SDK 14.3
+
+This patch adds support for DeckLink SDK 14.3 and newer by using
+the legacy interfaces in the header <DeckLinkAPI_v14_2_1.h>.
+
+The missing QueryInterface implementations are also provided.
+---
+ libavdevice/decklink_common.cpp | 13 +++++---
+ libavdevice/decklink_common.h   | 31 +++++++++++++++++--
+ libavdevice/decklink_dec.cpp    | 55 ++++++++++++++++++++++++++-------
+ libavdevice/decklink_enc.cpp    | 44 +++++++++++++++++++++-----
+ 4 files changed, 118 insertions(+), 25 deletions(-)
+
+diff --git a/libavdevice/decklink_common.cpp b/libavdevice/decklink_common.cpp
+index 47de7ef..fe187cd 100644
+--- a/libavdevice/decklink_common.cpp
++++ b/libavdevice/decklink_common.cpp
+@@ -25,7 +25,12 @@ extern "C" {
+ #include "libavformat/internal.h"
+ }
+ 
++#include <DeckLinkAPIVersion.h>
+ #include <DeckLinkAPI.h>
++#if BLACKMAGIC_DECKLINK_API_VERSION >= 0x0e030000
++#include <DeckLinkAPI_v14_2_1.h>
++#endif
++
+ #ifdef _WIN32
+ #include <DeckLinkAPI_i.c>
+ #else
+@@ -512,8 +517,8 @@ int ff_decklink_list_devices(AVFormatContext *avctx,
+         return AVERROR(EIO);
+ 
+     while (ret == 0 && iter->Next(&dl) == S_OK) {
+-        IDeckLinkOutput *output_config;
+-        IDeckLinkInput *input_config;
++        IDeckLinkOutput_v14_2_1 *output_config;
++        IDeckLinkInput_v14_2_1 *input_config;
+         const char *display_name = NULL;
+         const char *unique_name = NULL;
+         AVDeviceInfo *new_device = NULL;
+@@ -527,14 +532,14 @@ int ff_decklink_list_devices(AVFormatContext *avctx,
+             goto next;
+ 
+         if (show_outputs) {
+-            if (dl->QueryInterface(IID_IDeckLinkOutput, (void **)&output_config) == S_OK) {
++            if (dl->QueryInterface(IID_IDeckLinkOutput_v14_2_1, (void **)&output_config) == S_OK) {
+                 output_config->Release();
+                 add = 1;
+             }
+         }
+ 
+         if (show_inputs) {
+-            if (dl->QueryInterface(IID_IDeckLinkInput, (void **)&input_config) == S_OK) {
++            if (dl->QueryInterface(IID_IDeckLinkInput_v14_2_1, (void **)&input_config) == S_OK) {
+                 input_config->Release();
+                 add = 1;
+             }
+diff --git a/libavdevice/decklink_common.h b/libavdevice/decklink_common.h
+index 6b32dc2..095b438 100644
+--- a/libavdevice/decklink_common.h
++++ b/libavdevice/decklink_common.h
+@@ -29,6 +29,23 @@
+ #define IDeckLinkProfileAttributes IDeckLinkAttributes
+ #endif
+ 
++#if BLACKMAGIC_DECKLINK_API_VERSION < 0x0e030000
++#define IDeckLinkInput_v14_2_1 IDeckLinkInput
++#define IDeckLinkInputCallback_v14_2_1 IDeckLinkInputCallback
++#define IDeckLinkMemoryAllocator_v14_2_1 IDeckLinkMemoryAllocator
++#define IDeckLinkOutput_v14_2_1 IDeckLinkOutput
++#define IDeckLinkVideoFrame_v14_2_1 IDeckLinkVideoFrame
++#define IDeckLinkVideoInputFrame_v14_2_1 IDeckLinkVideoInputFrame
++#define IDeckLinkVideoOutputCallback_v14_2_1 IDeckLinkVideoOutputCallback
++#define IID_IDeckLinkInput_v14_2_1 IID_IDeckLinkInput
++#define IID_IDeckLinkInputCallback_v14_2_1 IID_IDeckLinkInputCallback
++#define IID_IDeckLinkMemoryAllocator_v14_2_1 IID_IDeckLinkMemoryAllocator
++#define IID_IDeckLinkOutput_v14_2_1 IID_IDeckLinkOutput
++#define IID_IDeckLinkVideoFrame_v14_2_1 IID_IDeckLinkVideoFrame
++#define IID_IDeckLinkVideoInputFrame_v14_2_1 IID_IDeckLinkVideoInputFrame
++#define IID_IDeckLinkVideoOutputCallback_v14_2_1 IID_IDeckLinkVideoOutputCallback
++#endif
++
+ extern "C" {
+ #include "libavutil/mem.h"
+ #include "libavcodec/packet_internal.h"
+@@ -76,6 +93,16 @@ static char *dup_cfstring_to_utf8(CFStringRef w)
+ #define DECKLINK_FREE(s) free((void *) s)
+ #endif
+ 
++#ifdef _WIN32
++#include <guiddef.h>    // REFIID, IsEqualIID()
++#define DECKLINK_IsEqualIID IsEqualIID
++#else
++static inline bool DECKLINK_IsEqualIID(const REFIID& riid1, const REFIID& riid2)
++{
++    return memcmp(&riid1, &riid2, sizeof(REFIID)) == 0;
++}
++#endif
++
+ class decklink_output_callback;
+ class decklink_input_callback;
+ 
+@@ -93,8 +120,8 @@ typedef struct DecklinkPacketQueue {
+ struct decklink_ctx {
+     /* DeckLink SDK interfaces */
+     IDeckLink *dl;
+-    IDeckLinkOutput *dlo;
+-    IDeckLinkInput *dli;
++    IDeckLinkOutput_v14_2_1 *dlo;
++    IDeckLinkInput_v14_2_1 *dli;
+     IDeckLinkConfiguration *cfg;
+     IDeckLinkProfileAttributes *attr;
+     decklink_output_callback *output_callback;
+diff --git a/libavdevice/decklink_dec.cpp b/libavdevice/decklink_dec.cpp
+index 418701e..8830779 100644
+--- a/libavdevice/decklink_dec.cpp
++++ b/libavdevice/decklink_dec.cpp
+@@ -31,7 +31,11 @@ extern "C" {
+ #include "libavformat/internal.h"
+ }
+ 
++#include <DeckLinkAPIVersion.h>
+ #include <DeckLinkAPI.h>
++#if BLACKMAGIC_DECKLINK_API_VERSION >= 0x0e030000
++#include <DeckLinkAPI_v14_2_1.h>
++#endif
+ 
+ extern "C" {
+ #include "config.h"
+@@ -105,7 +109,7 @@ static VANCLineNumber vanc_line_numbers[] = {
+     {bmdModeUnknown, 0, -1, -1, -1}
+ };
+ 
+-class decklink_allocator : public IDeckLinkMemoryAllocator
++class decklink_allocator : public IDeckLinkMemoryAllocator_v14_2_1
+ {
+ public:
+         decklink_allocator(): _refs(1) { }
+@@ -129,7 +133,21 @@ public:
+         virtual HRESULT STDMETHODCALLTYPE Decommit() { return S_OK; }
+ 
+         // IUnknown methods
+-        virtual HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID *ppv) { return E_NOINTERFACE; }
++        virtual HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, LPVOID *ppv)
++        {
++            if (DECKLINK_IsEqualIID(riid, IID_IUnknown)) {
++                *ppv = static_cast<IUnknown*>(this);
++            } else if (DECKLINK_IsEqualIID(riid, IID_IDeckLinkMemoryAllocator_v14_2_1)) {
++                *ppv = static_cast<IDeckLinkMemoryAllocator_v14_2_1*>(this);
++            } else {
++                *ppv = NULL;
++                return E_NOINTERFACE;
++            }
++
++            AddRef();
++            return S_OK;
++        }
++
+         virtual ULONG   STDMETHODCALLTYPE AddRef(void) { return ++_refs; }
+         virtual ULONG   STDMETHODCALLTYPE Release(void)
+         {
+@@ -472,7 +490,7 @@ skip_packet:
+ }
+ 
+ 
+-static void handle_klv(AVFormatContext *avctx, decklink_ctx *ctx, IDeckLinkVideoInputFrame *videoFrame, int64_t pts)
++static void handle_klv(AVFormatContext *avctx, decklink_ctx *ctx, IDeckLinkVideoInputFrame_v14_2_1 *videoFrame, int64_t pts)
+ {
+     const uint8_t KLV_DID = 0x44;
+     const uint8_t KLV_IN_VANC_SDID = 0x04;
+@@ -574,17 +592,30 @@ static void handle_klv(AVFormatContext *avctx, decklink_ctx *ctx, IDeckLinkVideo
+     }
+ }
+ 
+-class decklink_input_callback : public IDeckLinkInputCallback
++class decklink_input_callback : public IDeckLinkInputCallback_v14_2_1
+ {
+ public:
+         explicit decklink_input_callback(AVFormatContext *_avctx);
+         ~decklink_input_callback();
+ 
+-        virtual HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID *ppv) { return E_NOINTERFACE; }
++        virtual HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, LPVOID *ppv)
++        {
++            if (DECKLINK_IsEqualIID(riid, IID_IUnknown)) {
++                *ppv = static_cast<IUnknown*>(this);
++            } else if (DECKLINK_IsEqualIID(riid, IID_IDeckLinkInputCallback_v14_2_1)) {
++                *ppv = static_cast<IDeckLinkInputCallback_v14_2_1*>(this);
++            } else {
++                *ppv = NULL;
++                return E_NOINTERFACE;
++            }
++
++            AddRef();
++            return S_OK;
++        }
+         virtual ULONG STDMETHODCALLTYPE AddRef(void);
+         virtual ULONG STDMETHODCALLTYPE  Release(void);
+         virtual HRESULT STDMETHODCALLTYPE VideoInputFormatChanged(BMDVideoInputFormatChangedEvents, IDeckLinkDisplayMode*, BMDDetectedVideoInputFormatFlags);
+-        virtual HRESULT STDMETHODCALLTYPE VideoInputFrameArrived(IDeckLinkVideoInputFrame*, IDeckLinkAudioInputPacket*);
++        virtual HRESULT STDMETHODCALLTYPE VideoInputFrameArrived(IDeckLinkVideoInputFrame_v14_2_1*, IDeckLinkAudioInputPacket*);
+ 
+ private:
+         std::atomic<int>  _refs;
+@@ -593,7 +624,7 @@ private:
+         int no_video;
+         int64_t initial_video_pts;
+         int64_t initial_audio_pts;
+-        IDeckLinkVideoInputFrame* last_video_frame;
++        IDeckLinkVideoInputFrame_v14_2_1* last_video_frame;
+ };
+ 
+ decklink_input_callback::decklink_input_callback(AVFormatContext *_avctx) : _refs(1)
+@@ -625,7 +656,7 @@ ULONG decklink_input_callback::Release(void)
+     return ret;
+ }
+ 
+-static int64_t get_pkt_pts(IDeckLinkVideoInputFrame *videoFrame,
++static int64_t get_pkt_pts(IDeckLinkVideoInputFrame_v14_2_1 *videoFrame,
+                            IDeckLinkAudioInputPacket *audioFrame,
+                            int64_t wallclock,
+                            int64_t abs_wallclock,
+@@ -679,7 +710,7 @@ static int64_t get_pkt_pts(IDeckLinkVideoInputFrame *videoFrame,
+     return pts;
+ }
+ 
+-static int get_bmd_timecode(AVFormatContext *avctx, AVTimecode *tc, AVRational frame_rate, BMDTimecodeFormat tc_format, IDeckLinkVideoInputFrame *videoFrame)
++static int get_bmd_timecode(AVFormatContext *avctx, AVTimecode *tc, AVRational frame_rate, BMDTimecodeFormat tc_format, IDeckLinkVideoInputFrame_v14_2_1 *videoFrame)
+ {
+     IDeckLinkTimecode *timecode;
+     int ret = AVERROR(ENOENT);
+@@ -701,7 +732,7 @@ static int get_bmd_timecode(AVFormatContext *avctx, AVTimecode *tc, AVRational f
+     return ret;
+ }
+ 
+-static int get_frame_timecode(AVFormatContext *avctx, decklink_ctx *ctx, AVTimecode *tc, IDeckLinkVideoInputFrame *videoFrame)
++static int get_frame_timecode(AVFormatContext *avctx, decklink_ctx *ctx, AVTimecode *tc, IDeckLinkVideoInputFrame_v14_2_1 *videoFrame)
+ {
+     AVRational frame_rate = ctx->video_st->r_frame_rate;
+     int ret;
+@@ -726,7 +757,7 @@ static int get_frame_timecode(AVFormatContext *avctx, decklink_ctx *ctx, AVTimec
+ }
+ 
+ HRESULT decklink_input_callback::VideoInputFrameArrived(
+-    IDeckLinkVideoInputFrame *videoFrame, IDeckLinkAudioInputPacket *audioFrame)
++    IDeckLinkVideoInputFrame_v14_2_1 *videoFrame, IDeckLinkAudioInputPacket *audioFrame)
+ {
+     void *frameBytes;
+     void *audioFrameBytes;
+@@ -1141,7 +1172,7 @@ av_cold int ff_decklink_read_header(AVFormatContext *avctx)
+         goto error;
+ 
+     /* Get input device. */
+-    if (ctx->dl->QueryInterface(IID_IDeckLinkInput, (void **) &ctx->dli) != S_OK) {
++    if (ctx->dl->QueryInterface(IID_IDeckLinkInput_v14_2_1, (void **) &ctx->dli) != S_OK) {
+         av_log(avctx, AV_LOG_ERROR, "Could not open input device from '%s'\n",
+                avctx->url);
+         ret = AVERROR(EIO);
+diff --git a/libavdevice/decklink_enc.cpp b/libavdevice/decklink_enc.cpp
+index cb8f917..d2e246c 100644
+--- a/libavdevice/decklink_enc.cpp
++++ b/libavdevice/decklink_enc.cpp
+@@ -28,7 +28,11 @@ extern "C" {
+ #include "libavformat/internal.h"
+ }
+ 
++#include <DeckLinkAPIVersion.h>
+ #include <DeckLinkAPI.h>
++#if BLACKMAGIC_DECKLINK_API_VERSION >= 0x0e030000
++#include <DeckLinkAPI_v14_2_1.h>
++#endif
+ 
+ extern "C" {
+ #include "libavformat/avformat.h"
+@@ -48,7 +52,7 @@ extern "C" {
+ #endif
+ 
+ /* DeckLink callback class declaration */
+-class decklink_frame : public IDeckLinkVideoFrame
++class decklink_frame : public IDeckLinkVideoFrame_v14_2_1
+ {
+ public:
+     decklink_frame(struct decklink_ctx *ctx, AVFrame *avframe, AVCodecID codec_id, int height, int width) :
+@@ -111,7 +115,20 @@ public:
+         _ancillary->AddRef();
+         return S_OK;
+     }
+-    virtual HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID *ppv) { return E_NOINTERFACE; }
++    virtual HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, LPVOID *ppv)
++    {
++        if (DECKLINK_IsEqualIID(riid, IID_IUnknown)) {
++            *ppv = static_cast<IUnknown*>(this);
++        } else if (DECKLINK_IsEqualIID(riid, IID_IDeckLinkVideoFrame_v14_2_1)) {
++            *ppv = static_cast<IDeckLinkVideoFrame_v14_2_1*>(this);
++        } else {
++            *ppv = NULL;
++            return E_NOINTERFACE;
++        }
++
++        AddRef();
++        return S_OK;
++    }
+     virtual ULONG   STDMETHODCALLTYPE AddRef(void)                            { return ++_refs; }
+     virtual ULONG   STDMETHODCALLTYPE Release(void)
+     {
+@@ -138,10 +155,10 @@ private:
+     std::atomic<int>  _refs;
+ };
+ 
+-class decklink_output_callback : public IDeckLinkVideoOutputCallback
++class decklink_output_callback : public IDeckLinkVideoOutputCallback_v14_2_1
+ {
+ public:
+-    virtual HRESULT STDMETHODCALLTYPE ScheduledFrameCompleted(IDeckLinkVideoFrame *_frame, BMDOutputFrameCompletionResult result)
++    virtual HRESULT STDMETHODCALLTYPE ScheduledFrameCompleted(IDeckLinkVideoFrame_v14_2_1 *_frame, BMDOutputFrameCompletionResult result)
+     {
+         decklink_frame *frame = static_cast<decklink_frame *>(_frame);
+         struct decklink_ctx *ctx = frame->_ctx;
+@@ -159,7 +176,20 @@ public:
+         return S_OK;
+     }
+     virtual HRESULT STDMETHODCALLTYPE ScheduledPlaybackHasStopped(void)       { return S_OK; }
+-    virtual HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID *ppv) { return E_NOINTERFACE; }
++    virtual HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, LPVOID *ppv)
++    {
++        if (DECKLINK_IsEqualIID(riid, IID_IUnknown)) {
++            *ppv = static_cast<IUnknown*>(this);
++        } else if (DECKLINK_IsEqualIID(riid, IID_IDeckLinkVideoOutputCallback_v14_2_1)) {
++            *ppv = static_cast<IDeckLinkVideoOutputCallback_v14_2_1*>(this);
++        } else {
++            *ppv = NULL;
++            return E_NOINTERFACE;
++        }
++
++        AddRef();
++        return S_OK;
++    }
+     virtual ULONG   STDMETHODCALLTYPE AddRef(void)                            { return 1; }
+     virtual ULONG   STDMETHODCALLTYPE Release(void)                           { return 1; }
+ };
+@@ -739,7 +769,7 @@ static int decklink_write_video_packet(AVFormatContext *avctx, AVPacket *pkt)
+         ctx->first_pts = pkt->pts;
+ 
+     /* Schedule frame for playback. */
+-    hr = ctx->dlo->ScheduleVideoFrame((class IDeckLinkVideoFrame *) frame,
++    hr = ctx->dlo->ScheduleVideoFrame(frame,
+                                       pkt->pts * ctx->bmd_tb_num,
+                                       ctx->bmd_tb_num, ctx->bmd_tb_den);
+     /* Pass ownership to DeckLink, or release on failure */
+@@ -874,7 +904,7 @@ av_cold int ff_decklink_write_header(AVFormatContext *avctx)
+         return ret;
+ 
+     /* Get output device. */
+-    if (ctx->dl->QueryInterface(IID_IDeckLinkOutput, (void **) &ctx->dlo) != S_OK) {
++    if (ctx->dl->QueryInterface(IID_IDeckLinkOutput_v14_2_1, (void **) &ctx->dlo) != S_OK) {
+         av_log(avctx, AV_LOG_ERROR, "Could not open output device from '%s'\n",
+                avctx->url);
+         ret = AVERROR(EIO);
+-- 
+2.52.0
+

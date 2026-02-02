@@ -1,7 +1,7 @@
 From 4e1675488cbabb8e93162cddf373be74b4637abe Mon Sep 17 00:00:00 2001
 From: Jerome Martinez <jerome@mediaarea.net>
 Date: Wed, 3 Sep 2025 19:54:10 +0200
-Subject: [PATCH 07/19] matroskaenc: remove unused MaxBlockAdditionID
+Subject: [PATCH 07/18] matroskaenc: remove unused MaxBlockAdditionID
 
 For non video tracks: it is never used, let's save 4 bytes
 For video tracks: simplify the temporary storage with only a void element and MaxBlockAdditionID will be written when finishing the track if needed (not the default value)
