@@ -13,10 +13,10 @@ This permits to handle by default more e.g. timecodes without having to set the 
  4 files changed, 27 insertions(+), 27 deletions(-)
 
 diff --git a/libavformat/matroskaenc.c b/libavformat/matroskaenc.c
-index 01239bea57..24e0a33c55 100644
+index 56c6553..c2ce9e6 100644
 --- a/libavformat/matroskaenc.c
 +++ b/libavformat/matroskaenc.c
-@@ -3580,7 +3580,7 @@ static const AVCodecTag additional_subtitle_tags[] = {
+@@ -3625,7 +3625,7 @@ static const AVCodecTag additional_subtitle_tags[] = {
  #define FLAGS AV_OPT_FLAG_ENCODING_PARAM
  static const AVOption options[] = {
      { "reserve_index_space", "reserve a given amount of space (in bytes) at the beginning of the file for the index (cues)", OFFSET(reserve_cues_space), AV_OPT_TYPE_INT,   { .i64 = 0 },   0, INT_MAX,   FLAGS },
@@ -26,7 +26,7 @@ index 01239bea57..24e0a33c55 100644
      { "cluster_size_limit",  "store at most the provided amount of bytes in a cluster",                                     OFFSET(cluster_size_limit), AV_OPT_TYPE_INT  , { .i64 = -1 }, -1, INT_MAX,   FLAGS },
      { "cluster_time_limit",  "store at most the provided number of milliseconds in a cluster",                               OFFSET(cluster_time_limit), AV_OPT_TYPE_INT64, { .i64 = -1 }, -1, INT64_MAX, FLAGS },
 diff --git a/tests/ref/lavf/mkv b/tests/ref/lavf/mkv
-index b32b521cfa..8fea09caf6 100644
+index bea4047..ec0728d 100644
 --- a/tests/ref/lavf/mkv
 +++ b/tests/ref/lavf/mkv
 @@ -1,3 +1,3 @@
@@ -34,9 +34,9 @@ index b32b521cfa..8fea09caf6 100644
 -320443 tests/data/lavf/lavf.mkv
 +c95871d60c576ae73f360145cb61db90 *tests/data/lavf/lavf.mkv
 +320520 tests/data/lavf/lavf.mkv
- tests/data/lavf/lavf.mkv CRC=0xec6c3c68
+ tests/data/lavf/lavf.mkv CRC=0x29d44368
 diff --git a/tests/ref/lavf/mkv_attachment b/tests/ref/lavf/mkv_attachment
-index aa3faf9d12..221f4ddd49 100644
+index 0276f33..37fe4f8 100644
 --- a/tests/ref/lavf/mkv_attachment
 +++ b/tests/ref/lavf/mkv_attachment
 @@ -1,3 +1,3 @@
@@ -44,9 +44,9 @@ index aa3faf9d12..221f4ddd49 100644
 -472593 tests/data/lavf/lavf.mkv_attachment
 +fdfcb796a2e1a020bcc36ea926a243ce *tests/data/lavf/lavf.mkv_attachment
 +472670 tests/data/lavf/lavf.mkv_attachment
- tests/data/lavf/lavf.mkv_attachment CRC=0xec6c3c68
+ tests/data/lavf/lavf.mkv_attachment CRC=0x29d44368
 diff --git a/tests/ref/seek/lavf-mkv b/tests/ref/seek/lavf-mkv
-index 2eb8506356..f2253e1c59 100644
+index 2eb8506..f2253e1 100644
 --- a/tests/ref/seek/lavf-mkv
 +++ b/tests/ref/seek/lavf-mkv
 @@ -1,48 +1,48 @@
