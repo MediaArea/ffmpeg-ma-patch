@@ -14,10 +14,10 @@ For video tracks: simplify the temporary storage with only a void element and Ma
  5 files changed, 32 insertions(+), 32 deletions(-)
 
 diff --git a/libavformat/matroskaenc.c b/libavformat/matroskaenc.c
-index 18f17f4329..7b43451a70 100644
+index be9e0c2..e696502 100644
 --- a/libavformat/matroskaenc.c
 +++ b/libavformat/matroskaenc.c
-@@ -1706,16 +1706,16 @@ static void mkv_write_blockadditionmapping(AVFormatContext *s, const MatroskaMux
+@@ -1738,16 +1738,16 @@ static void mkv_write_blockadditionmapping(AVFormatContext *s, const MatroskaMux
      const AVDOVIDecoderConfigurationRecord *dovi;
      const AVPacketSideData *sd;
  
@@ -37,7 +37,7 @@ index 18f17f4329..7b43451a70 100644
                              + 4 /* BlockAddIDValue */
                              + 4 /* BlockAddIDType */);
          }
-@@ -3294,7 +3294,7 @@ after_cues:
+@@ -3339,7 +3339,7 @@ after_cues:
              for (unsigned i = 0; i < s->nb_streams; i++) {
                  const mkv_track *track = &mkv->tracks[i];
  
@@ -47,7 +47,7 @@ index 18f17f4329..7b43451a70 100644
  
                  // We reserved a single byte to write this value.
 diff --git a/tests/ref/lavf/mka b/tests/ref/lavf/mka
-index 6f9a56b24a..6fe5ca8d9e 100644
+index 6f9a56b..6fe5ca8 100644
 --- a/tests/ref/lavf/mka
 +++ b/tests/ref/lavf/mka
 @@ -1,3 +1,3 @@
@@ -57,7 +57,7 @@ index 6f9a56b24a..6fe5ca8d9e 100644
 +43584 tests/data/lavf/lavf.mka
  tests/data/lavf/lavf.mka CRC=0x3a1da17e
 diff --git a/tests/ref/lavf/mkv b/tests/ref/lavf/mkv
-index 5a3c3b931e..b32b521cfa 100644
+index 94605b3..bea4047 100644
 --- a/tests/ref/lavf/mkv
 +++ b/tests/ref/lavf/mkv
 @@ -1,3 +1,3 @@
@@ -65,9 +65,9 @@ index 5a3c3b931e..b32b521cfa 100644
 -320447 tests/data/lavf/lavf.mkv
 +9397da7654fc3a00a439545584608637 *tests/data/lavf/lavf.mkv
 +320443 tests/data/lavf/lavf.mkv
- tests/data/lavf/lavf.mkv CRC=0xec6c3c68
+ tests/data/lavf/lavf.mkv CRC=0x29d44368
 diff --git a/tests/ref/lavf/mkv_attachment b/tests/ref/lavf/mkv_attachment
-index 1a086a4f24..aa3faf9d12 100644
+index 6effac4..0276f33 100644
 --- a/tests/ref/lavf/mkv_attachment
 +++ b/tests/ref/lavf/mkv_attachment
 @@ -1,3 +1,3 @@
@@ -75,9 +75,9 @@ index 1a086a4f24..aa3faf9d12 100644
 -472597 tests/data/lavf/lavf.mkv_attachment
 +1c40de58fae4e878e0a499bfe61d78e0 *tests/data/lavf/lavf.mkv_attachment
 +472593 tests/data/lavf/lavf.mkv_attachment
- tests/data/lavf/lavf.mkv_attachment CRC=0xec6c3c68
+ tests/data/lavf/lavf.mkv_attachment CRC=0x29d44368
 diff --git a/tests/ref/seek/lavf-mkv b/tests/ref/seek/lavf-mkv
-index e327959058..2eb8506356 100644
+index e327959..2eb8506 100644
 --- a/tests/ref/seek/lavf-mkv
 +++ b/tests/ref/seek/lavf-mkv
 @@ -1,48 +1,48 @@

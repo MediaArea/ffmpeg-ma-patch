@@ -10,10 +10,10 @@ It is also possible to reduce the reserved space (or even eliminate it) for thos
  1 file changed, 59 insertions(+), 23 deletions(-)
 
 diff --git a/libavformat/matroskaenc.c b/libavformat/matroskaenc.c
-index 7b43451a70..01239bea57 100644
+index e696502..56c6553 100644
 --- a/libavformat/matroskaenc.c
 +++ b/libavformat/matroskaenc.c
-@@ -80,6 +80,8 @@
+@@ -81,6 +81,8 @@
   * and so has avio_write(). */
  #define MAX_SUPPORTED_EBML_LENGTH FFMIN(MAX_EBML_LENGTH, INT_MAX)
  
@@ -22,7 +22,7 @@ index 7b43451a70..01239bea57 100644
  #define MODE_MATROSKAv2 0x01
  #define MODE_WEBM       0x02
  
-@@ -196,6 +198,7 @@ typedef struct mkv_track {
+@@ -197,6 +199,7 @@ typedef struct mkv_track {
      int64_t         duration;
      int64_t         duration_offset;
      uint64_t        max_blockaddid;
@@ -30,7 +30,7 @@ index 7b43451a70..01239bea57 100644
      int64_t         blockadditionmapping_offset;
      int             codecpriv_offset;
      unsigned        codecpriv_size;     ///< size reserved for CodecPrivate excluding header+length field
-@@ -249,6 +252,7 @@ typedef struct MatroskaMuxContext {
+@@ -250,6 +253,7 @@ typedef struct MatroskaMuxContext {
      int                 wrote_tags;
  
      int                 reserve_cues_space;
@@ -38,7 +38,7 @@ index 7b43451a70..01239bea57 100644
      int                 cluster_size_limit;
      int64_t             cluster_time_limit;
      int                 write_crc;
-@@ -1706,19 +1710,12 @@ static void mkv_write_blockadditionmapping(AVFormatContext *s, const MatroskaMux
+@@ -1738,19 +1742,12 @@ static void mkv_write_blockadditionmapping(AVFormatContext *s, const MatroskaMux
      const AVDOVIDecoderConfigurationRecord *dovi;
      const AVPacketSideData *sd;
  
@@ -60,7 +60,7 @@ index 7b43451a70..01239bea57 100644
      }
  
      sd = av_packet_side_data_get(par->coded_side_data, par->nb_coded_side_data,
-@@ -2796,6 +2793,31 @@ static void mkv_write_blockadditional(EbmlWriter *writer, const uint8_t *buf,
+@@ -2828,6 +2825,31 @@ static void mkv_write_blockadditional(EbmlWriter *writer, const uint8_t *buf,
      ebml_writer_close_master(writer);
  }
  
@@ -90,9 +90,9 @@ index 7b43451a70..01239bea57 100644
 +}
 +
  static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
-                            AVIOContext *pb, const AVCodecParameters *par,
+                            AVIOContext *pb, const AVStream *st,
                             mkv_track *track, const AVPacket *pkt,
-@@ -2807,7 +2829,7 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
+@@ -2840,7 +2862,7 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
      size_t side_data_size;
      uint64_t additional_id;
      unsigned track_number = track->track_num;
@@ -101,7 +101,7 @@ index 7b43451a70..01239bea57 100644
      int ret;
  
      mkv->cur_block.track  = track;
-@@ -2882,6 +2904,7 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
+@@ -2926,6 +2948,7 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
                                        MATROSKA_BLOCK_ADD_ID_ITU_T_T35);
              track->max_blockaddid = FFMAX(track->max_blockaddid,
                                            MATROSKA_BLOCK_ADD_ID_ITU_T_T35);
@@ -109,7 +109,7 @@ index 7b43451a70..01239bea57 100644
          }
      }
  
-@@ -3293,24 +3316,36 @@ after_cues:
+@@ -3338,24 +3361,36 @@ after_cues:
  
              for (unsigned i = 0; i < s->nb_streams; i++) {
                  const mkv_track *track = &mkv->tracks[i];
@@ -159,7 +159,7 @@ index 7b43451a70..01239bea57 100644
                  }
              }
          }
-@@ -3545,6 +3580,7 @@ static const AVCodecTag additional_subtitle_tags[] = {
+@@ -3590,6 +3625,7 @@ static const AVCodecTag additional_subtitle_tags[] = {
  #define FLAGS AV_OPT_FLAG_ENCODING_PARAM
  static const AVOption options[] = {
      { "reserve_index_space", "reserve a given amount of space (in bytes) at the beginning of the file for the index (cues)", OFFSET(reserve_cues_space), AV_OPT_TYPE_INT,   { .i64 = 0 },   0, INT_MAX,   FLAGS },
