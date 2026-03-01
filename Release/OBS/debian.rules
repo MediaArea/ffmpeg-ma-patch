@@ -1,0 +1,92 @@
+#!/usr/bin/make -f
+# -*- makefile -*-
+
+export DH_VERBOSE=1
+
+export PATH := $(CURDIR)/output/bin:$(PATH)
+export LIBRARY_PATH := $(CURDIR)/output/lib
+export PKG_CONFIG_PATH :=$(CURDIR)/output/lib/pkgconfig
+
+configure: configure-stamp
+configure-stamp:
+	dh_testdir
+ 
+	meson setup --prefix $(CURDIR)/output --libdir lib --default-library=static -Dbrotli=disabled -Dbzip2=disabled -Dharfbuzz=disabled -Dpng=disabled -Dzlib=system freetype/build freetype
+	ninja -C freetype/build install
+
+	meson setup --prefix $(CURDIR)/output --libdir lib --default-library=static -Dglib=disabled -Dgobject=disabled -Dcairo=disabled -Dchafa=disabled -Dicu=disabled -Dgraphite=disabled -Dgraphite2=disabled -Dgdi=disabled -Ddirectwrite=disabled -Dcoretext=disabled -Dwasm=disabled -Dtests=disabled -Dintrospection=disabled -Ddocs=disabled -Ddoc_tests=false -Dutilities=disabled harfbuzz/build harfbuzz
+	ninja -C harfbuzz/build install
+ 
+	meson setup --prefix $(CURDIR)/output --libdir lib --default-library=static -Dtests=disabled openh264/builddir openh264
+	ninja -C openh264/builddir install
+	sed -i 's/-lopenh264/-lopenh264 -lstdc++/g' $(CURDIR)/output/lib/pkgconfig/openh264.pc
+
+	meson setup  --prefix $(CURDIR)/output --libdir lib --default-library=static -Dbin=false -Ddocs=false -Dtests=false fribidi/build fribidi
+	ninja -C fribidi/build install
+
+	meson setup  --prefix $(CURDIR)/output --libdir lib --default-library=static -Dasm=enabled -Dfontconfig=enabled -Dlibunibreak=disabled -Dcompare=disabled -Dprofile=disabled -Dfuzz=disabled -Dcheckasm=disabled	 -Dtest=disabled ass/build ass
+	ninja -C ass/build install
+
+	cmake -B vulkan-headers/build -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$(CURDIR)/output vulkan-headers
+	ninja -C vulkan-headers/build install
+
+	cmake -B shaderc/build -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$(CURDIR)/output -DCMAKE_INSTALL_LIBDIR=lib -DSHADERC_SKIP_TESTS=ON -DSHADERC_SKIP_EXAMPLES=ON shaderc
+	ninja -C shaderc/build install
+
+	cmake -B sdl/build -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$(CURDIR)/output -DCMAKE_INSTALL_LIBDIR=lib -DSDL_STATIC=ON -DSDL_SHARED=OFF sdl
+	ninja -C sdl/build install
+
+	# Copy DeckLinkSDK include files
+	cp -r ffmpeg/DeckLinkSDK/Linux/include/* output/include
+
+	cd ffmpeg && ./configure %BUILD_OPTIONS% --enable-alsa --extra-cflags=-I$(CURDIR)/output/include --extra-cxxflags=-I$(CURDIR)/output/include --extra-ldflags=-lstdc++
+
+	touch $@
+
+build: build-stamp
+build-stamp: configure-stamp  
+	dh_testdir
+
+	cd ffmpeg && $(MAKE)
+
+	touch $@
+
+clean:
+	dh_testdir
+	dh_testroot
+	dh_clean
+
+install: build
+	dh_testdir
+	dh_testroot
+	dh_prep
+	dh_installdirs
+
+	install -dm 755 $(CURDIR)/debian/tmp/usr/bin
+	install -m 755 ffmpeg/ffmpeg_g $(CURDIR)/debian/tmp/usr/bin/ffmpeg-ma
+	install -m 755 ffmpeg/ffplay_g $(CURDIR)/debian/tmp/usr/bin/ffplay-ma
+	install -Dm 644 ffmpeg/patches/Release/HowToGPU.linux.txt $(CURDIR)/debian/tmp/usr/share/doc/ffmpeg-ma/HowToGPU.txt
+
+# Build architecture-independent files here.
+binary-indep: build install
+# We have nothing to do by default.
+
+# Build architecture-dependent files here.
+binary-arch: build install
+	dh_testdir
+	dh_testroot
+	dh_install --sourcedir=debian/tmp
+	dh_installman
+	dh_link
+	dh_strip
+	dh_compress
+	dh_fixperms
+	dh_makeshlibs
+	dh_installdeb
+	dh_shlibdeps
+	dh_gencontrol
+	dh_md5sums
+	dh_builddeb
+
+binary: binary-indep binary-arch
+.PHONY: build clean binary-indep binary-arch binary install configure

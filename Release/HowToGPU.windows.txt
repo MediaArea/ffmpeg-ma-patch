@@ -1,0 +1,22 @@
+FFmpeg - Vulkan support on Windows
+=======================================================
+
+This build of FFmpeg uses Vulkan for GPU acceleration.
+
+The Vulkan runtime and the Vulkan driver are installed
+together with the graphics driver of your GPU vendor.
+No additional software is needed.
+
+  * Make sure that your GPU is compatible with Vulkan.
+  * Install or update the graphics driver from your GPU vendor.
+
+Checking the installation
+-------------------------
+
+In a command prompt, from the extracted archive directory, the following
+command should list the Vulkan device(s) found and exit without error:
+
+        bin\ffmpeg.exe -v verbose -init_hw_device vulkan -f lavfi -i nullsrc -frames:v 1 -f null -
+
+If the error "Unable to open the libvulkan library!" is displayed, the graphics
+driver is missing, outdated or does not support Vulkan.

@@ -1,0 +1,15 @@
+Source: ffmpeg-ma
+Section: utils
+Priority: optional
+Maintainer: MediaArea.net SARL <info@mediaarea.net>
+Build-Depends: debhelper (>= 12), nasm, cmake, meson, ninja-build, pkgconf, make, libasound2-dev, libfontconfig-dev, zlib1g-dev
+Standards-Version: 4.6.2
+
+Package: ffmpeg-ma
+Architecture: any
+Pre-Depends: ${misc:Pre-Depends}
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Conflicts: ffmpeg-ma
+Replaces: ffmpeg-ma
+Provides: ffmpeg-ma
+Description: FFmpeg binary with patches from MediaArea.net

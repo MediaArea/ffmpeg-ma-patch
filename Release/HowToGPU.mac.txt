@@ -1,0 +1,60 @@
+FFmpeg - Vulkan support on macOS
+=====================================================
+
+This build of FFmpeg uses Vulkan for GPU acceleration. macOS does not ship a
+Vulkan implementation, so one must be installed separately and FFmpeg must be
+told where to find its driver (ICD) through the VK_ICD_FILENAMES environment
+variable.
+
+The instructions below apply to Apple Silicon (arm64) Macs. Choose one of the
+following installation methods.
+
+
+LunarG SDK (System Global Installation)
+---------------------------------------
+
+  * Install the LunarG Vulkan SDK: https://vulkan.lunarg.com/sdk/home#mac
+
+  * Run the following command in the current terminal before using
+    ffmpeg-ma/rawcooked:
+
+        export VK_ICD_FILENAMES=/usr/local/share/vulkan/icd.d/libkosmickrisp_icd.json
+
+
+LunarG SDK (Custom Prefix Installation)
+---------------------------------------
+
+  * Install the LunarG Vulkan SDK (https://vulkan.lunarg.com/sdk/home#mac) in
+    the desired location (uncheck "System Global Installation").
+
+  * Run the following commands in the current terminal before using
+    ffmpeg-ma/rawcooked:
+
+        VULKAN_PREFIX=/path/to/vulkan/sdk/version
+        export DYLD_FALLBACK_LIBRARY_PATH=$VULKAN_PREFIX/macOS/lib
+        export VK_ICD_FILENAMES=$VULKAN_PREFIX/macOS/share/vulkan/icd.d/libkosmickrisp_icd.json
+
+
+Homebrew Installation
+---------------------
+
+  * Install mesa:
+
+        brew install mesa
+
+  * Run the following command in the current terminal before using
+    ffmpeg-ma/rawcooked:
+
+        export VK_ICD_FILENAMES=/opt/homebrew/Cellar/mesa/$(brew list --versions mesa | awk '{print $2}')/share/vulkan/icd.d/kosmickrisp_mesa_icd.aarch64.json
+
+
+Checking the installation
+-------------------------
+
+In the same terminal, from the extracted archive directory, the following
+command should list the Vulkan device(s) found and exit without error:
+
+        bin/ffmpeg -v verbose -init_hw_device vulkan -f lavfi -i nullsrc -frames:v 1 -f null -
+
+The export commands only apply to the current terminal session. To make them
+permanent, add them to your shell startup file (e.g. ~/.zshrc).

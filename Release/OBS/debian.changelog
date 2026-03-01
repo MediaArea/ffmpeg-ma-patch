@@ -1,0 +1,5 @@
+ffmpeg-ma (8.0-1) stable; urgency=medium
+
+  * Update to ffmpeg 8.0
+
+ -- MediaArea CI <info@mediaarea.net>  Fri, 19 Jun 2026 13:40:44 +0000

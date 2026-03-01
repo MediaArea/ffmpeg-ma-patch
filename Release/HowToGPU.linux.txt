@@ -1,0 +1,34 @@
+FFmpeg - Vulkan support on Linux
+=====================================================
+
+This build of FFmpeg uses Vulkan for GPU acceleration.
+
+Two components are needed, both provided by your distribution or your GPU
+vendor.
+
+  * The Vulkan loader (libvulkan.so.1):
+      - Debian/Ubuntu:        sudo apt install libvulkan1
+      - Fedora/RHEL/openSUSE: sudo dnf install vulkan-loader
+                              (openSUSE: sudo zypper install libvulkan1)
+      - Arch Linux:           sudo pacman -S vulkan-icd-loader
+
+  * The Vulkan driver for your GPU:
+      - AMD and Intel GPUs: the Mesa Vulkan drivers
+          - Debian/Ubuntu:    sudo apt install mesa-vulkan-drivers
+          - Fedora/RHEL:      sudo dnf install mesa-vulkan-drivers
+          - openSUSE:         sudo zypper install libvulkan_radeon libvulkan_intel
+          - Arch Linux:       sudo pacman -S vulkan-radeon vulkan-intel
+      - NVIDIA GPUs: the NVIDIA proprietary driver (refer to your distribution documentation)
+
+
+Checking the installation
+-------------------------
+
+The following command should list the Vulkan device(s) found and exit without
+error:
+
+        ffmpeg-ma -v verbose -init_hw_device vulkan -f lavfi -i nullsrc -frames:v 1 -f null -
+
+If the error "Unable to open the libvulkan library!" is displayed, the Vulkan
+loader is missing. If no device is found, the Vulkan driver for your GPU is
+missing or does not support your GPU.
