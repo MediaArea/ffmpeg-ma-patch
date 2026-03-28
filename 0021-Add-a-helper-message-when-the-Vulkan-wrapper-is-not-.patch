@@ -1,0 +1,37 @@
+From c3ec5b992bab31c1c16c7871a56ed964dc79a437 Mon Sep 17 00:00:00 2001
+From: Maxime Gervais <gervais.maxime@gmail.com>
+Date: Fri, 27 Mar 2026 06:55:19 +0100
+Subject: [PATCH] Add a help when the Vulkan wrapper is not found
+
+---
+ libavutil/hwcontext_vulkan.c | 14 +++++++++++++-
+ 1 file changed, 13 insertions(+), 1 deletion(-)
+
+diff --git a/libavutil/hwcontext_vulkan.c b/libavutil/hwcontext_vulkan.c
+index 65e2256..5a3fee3 100644
+--- a/libavutil/hwcontext_vulkan.c
++++ b/libavutil/hwcontext_vulkan.c
+@@ -655,7 +655,19 @@ static int load_libvulkan(AVHWDeviceContext *ctx)
+     }
+ 
+     if (!p->libvulkan) {
+-        av_log(ctx, AV_LOG_ERROR, "Unable to open the libvulkan library!\n");
++        av_log(ctx, AV_LOG_ERROR, "Unable to open the libvulkan library!\n"
++#if defined(__APPLE__)
++                "Make sure the Vulkan SDK is installed and the library is in the system's library path.\n"
++                "You can download the Vulkan SDK for macOS from LunarG's website: https://vulkan.lunarg.com/sdk/home#mac\n"
++                "Alternatively, you can install the Homebrew's \"mesa\" package.\n"
++#elif defined(__linux__)
++                "Make sure the Vulkan loader is installed and the library is in the system's library path.\n"
++                "On Debian-based systems, you can install the loader with: sudo apt install libvulkan1\n"
++                "On Red Hat-based systems, you can install the loader with: sudo dnf install vulkan-loader\n"
++#elif defined(_WIN32)
++                "Make sure that your GPU is compatible and the graphics driver is up to date.\n"
++#endif
++        );
+         return AVERROR_UNKNOWN;
+     }
+ 
+-- 
+2.53.0
+
