@@ -16,10 +16,10 @@ Subject: [PATCH 19/19] decklink_dec: support labels
  9 files changed, 363 insertions(+), 83 deletions(-)
 
 diff --git a/fftools/ffprobe.c b/fftools/ffprobe.c
-index 13ef4a73bb..bae25764f7 100644
+index 1cdd8e7..bff2df3 100644
 --- a/fftools/ffprobe.c
 +++ b/fftools/ffprobe.c
-@@ -975,6 +975,7 @@ static void print_pkt_side_data(AVTextFormatContext *tfc,
+@@ -1020,6 +1020,7 @@ static void print_pkt_side_data(AVTextFormatContext *tfc,
      const char *name = av_packet_side_data_name(sd->type);
  
      avtext_print_section_header(tfc, sd, id_data);
@@ -27,7 +27,7 @@ index 13ef4a73bb..bae25764f7 100644
      print_str("side_data_type", name ? name : "unknown");
      if (sd->type == AV_PKT_DATA_DISPLAYMATRIX && sd->size >= 9*4) {
          print_displaymatrix(tfc, (const int32_t*)sd->data);
-@@ -1319,14 +1320,32 @@ static void print_frame_side_data(AVTextFormatContext *tfc,
+@@ -1368,14 +1369,32 @@ static void print_frame_side_data(AVTextFormatContext *tfc,
              av_timecode_make_mpeg_tc_string(tcbuf, *(int64_t *)(sd->data));
              print_str("timecode", tcbuf);
          } else if (sd->type == AV_FRAME_DATA_S12M_TIMECODE && sd->size >= 8) {
@@ -65,7 +65,7 @@ index 13ef4a73bb..bae25764f7 100644
              }
              avtext_print_section_footer(tfc);
 diff --git a/libavdevice/decklink_dec.cpp b/libavdevice/decklink_dec.cpp
-index 370efa9a4b..539482bcca 100644
+index 370efa9..539482b 100644
 --- a/libavdevice/decklink_dec.cpp
 +++ b/libavdevice/decklink_dec.cpp
 @@ -712,7 +712,24 @@ static int64_t get_pkt_pts(IDeckLinkVideoInputFrame_v14_2_1 *videoFrame,
@@ -198,10 +198,10 @@ index 370efa9a4b..539482bcca 100644
                          }
  
 diff --git a/libavformat/avformat.c b/libavformat/avformat.c
-index 18ca4643ee..3014f37fc1 100644
+index 8a98f2e..b062b28 100644
 --- a/libavformat/avformat.c
 +++ b/libavformat/avformat.c
-@@ -873,3 +873,84 @@ int ff_format_io_close(AVFormatContext *s, AVIOContext **pb)
+@@ -908,3 +908,84 @@ int ff_format_io_close(AVFormatContext *s, AVIOContext **pb)
      *pb = NULL;
      return ret;
  }
@@ -288,10 +288,10 @@ index 18ca4643ee..3014f37fc1 100644
 +}
 \ No newline at end of file
 diff --git a/libavformat/avformat.h b/libavformat/avformat.h
-index bd34132e00..493b6e2976 100644
+index ee0dddd..6342bb6 100644
 --- a/libavformat/avformat.h
 +++ b/libavformat/avformat.h
-@@ -3011,6 +3011,31 @@ attribute_deprecated
+@@ -3110,6 +3110,31 @@ attribute_deprecated
  AVRational av_stream_get_codec_timebase(const AVStream *st);
  #endif
  
@@ -324,7 +324,7 @@ index bd34132e00..493b6e2976 100644
  /**
   * @}
 diff --git a/libavformat/dump.c b/libavformat/dump.c
-index 734a6e0bbf..85ddefceae 100644
+index 66abc2a..0ab2614 100644
 --- a/libavformat/dump.c
 +++ b/libavformat/dump.c
 @@ -427,19 +427,46 @@ static void dump_dovi_conf(void *ctx, const AVPacketSideData *sd,
@@ -392,7 +392,7 @@ index 734a6e0bbf..85ddefceae 100644
          case AV_PKT_DATA_AMBIENT_VIEWING_ENVIRONMENT:
              dump_ambient_viewing_environment_metadata(ctx, sd, log_level);
 diff --git a/libavformat/matroska.h b/libavformat/matroska.h
-index d78b33d4b2..84debcfd64 100644
+index d78b33d..84debcf 100644
 --- a/libavformat/matroska.h
 +++ b/libavformat/matroska.h
 @@ -223,6 +223,7 @@
@@ -404,7 +404,7 @@ index d78b33d4b2..84debcfd64 100644
  /* IDs in the seekhead master */
  #define MATROSKA_ID_SEEKENTRY  0x4DBB
 diff --git a/libavformat/matroskadec.c b/libavformat/matroskadec.c
-index 2c9408359c..ea4083178b 100644
+index 3d8b7fc..0fea31f 100644
 --- a/libavformat/matroskadec.c
 +++ b/libavformat/matroskadec.c
 @@ -49,6 +49,7 @@
@@ -506,7 +506,7 @@ index 2c9408359c..ea4083178b 100644
                                           &track[j].stream->metadata, NULL);
                      found = 1;
                 }
-@@ -3462,6 +3501,17 @@ static int matroska_read_header(AVFormatContext *s)
+@@ -3463,6 +3502,17 @@ static int matroska_read_header(AVFormatContext *s)
  
      matroska_convert_tags(s);
  
@@ -524,7 +524,7 @@ index 2c9408359c..ea4083178b 100644
      return 0;
  }
  
-@@ -3973,29 +4023,8 @@ static int matroska_parse_block_additional(MatroskaDemuxContext *matroska,
+@@ -4009,29 +4059,8 @@ static int matroska_parse_block_additional(MatroskaDemuxContext *matroska,
              break;
          }
  
@@ -555,12 +555,12 @@ index 2c9408359c..ea4083178b 100644
 +        return av_packet_add_s12m_timecode_to_side_data(matroska->ctx, pkt, S12M_TIMECODE_FLAG_ID_PRESENT | S12M_TIMECODE_FLAG_TITLE_PRESENT, tc, id, mapping->title);
      }
      default:
-         break;
+         side_data = av_packet_new_side_data(pkt, AV_PKT_DATA_MATROSKA_BLOCKADDITIONAL,
 diff --git a/libavformat/matroskaenc.c b/libavformat/matroskaenc.c
-index f3e8b8e09f..655df38192 100644
+index cf5ddd0..3b3eb28 100644
 --- a/libavformat/matroskaenc.c
 +++ b/libavformat/matroskaenc.c
-@@ -201,9 +201,11 @@ typedef struct mkv_track {
+@@ -203,9 +203,11 @@ typedef struct mkv_track {
      int64_t         last_timestamp;
      int64_t         duration;
      int64_t         duration_offset;
@@ -572,7 +572,7 @@ index f3e8b8e09f..655df38192 100644
      int64_t         blockadditionmapping_offset;
      int             codecpriv_offset;
      unsigned        codecpriv_size;     ///< size reserved for CodecPrivate excluding header+length field
-@@ -3480,6 +3482,46 @@ static int mkv_write_tags(AVFormatContext *s)
+@@ -3524,6 +3526,46 @@ static int mkv_write_tags(AVFormatContext *s)
              return ret;
          if (seekable)
              track->duration_offset = avio_tell(mkv->tags.bc) - DURATION_SIMPLETAG_SIZE;
@@ -619,7 +619,7 @@ index f3e8b8e09f..655df38192 100644
      }
  
      if (mkv->nb_attachments && !IS_WEBM(mkv)) {
-@@ -4089,12 +4131,16 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
+@@ -4145,12 +4187,16 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
      uint64_t count = 0;
      if (par->codec_type == AVMEDIA_TYPE_VIDEO) {
          side_data = av_packet_get_side_data(pkt, AV_PKT_DATA_S12M_TIMECODE, &side_data_size);
@@ -641,7 +641,7 @@ index f3e8b8e09f..655df38192 100644
                  if (count > MAX_MATROSKA_BLOCK_ADD_SMPTE_12M) {
                      if (count > track->timecode_count) {
                          av_log(logctx, AV_LOG_WARNING, "Too many SMPTE timecode streams in side data, discarding %"PRIu64" timecode streams.\n", count - MAX_MATROSKA_BLOCK_ADD_SMPTE_12M);
-@@ -4102,10 +4148,15 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
+@@ -4158,10 +4204,15 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
                      written_count = MAX_MATROSKA_BLOCK_ADD_SMPTE_12M;
                  }
                  for (uint64_t i = 0; i < written_count; i++) {
@@ -660,7 +660,7 @@ index f3e8b8e09f..655df38192 100644
  
                      int blockaddid = MATROSKA_BLOCK_ADD_ID_SMPTE_12M + i;
                      mkv_write_blockadditional(&writer, payload, 8, blockaddid);
-@@ -4582,6 +4633,50 @@ after_cues:
+@@ -4639,6 +4690,50 @@ after_cues:
                  if (remaining_video_track_space > 1) {
                      put_ebml_void(track_bc, remaining_video_track_space);
                  }
@@ -712,7 +712,7 @@ index f3e8b8e09f..655df38192 100644
          }
  
 diff --git a/libavutil/timecode.h b/libavutil/timecode.h
-index 81713a9adf..6c4af1afdc 100644
+index 81713a9..6c4af1a 100644
 --- a/libavutil/timecode.h
 +++ b/libavutil/timecode.h
 @@ -28,6 +28,8 @@
