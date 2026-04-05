@@ -9,7 +9,7 @@ Subject: [PATCH 12/19] matroskadec: read timecode in BlockAddition
  2 files changed, 35 insertions(+)
 
 diff --git a/libavformat/matroska.h b/libavformat/matroska.h
-index 719f2ef796..d78b33d4b2 100644
+index 719f2ef..d78b33d 100644
 --- a/libavformat/matroska.h
 +++ b/libavformat/matroska.h
 @@ -361,6 +361,7 @@ typedef enum {
@@ -21,7 +21,7 @@ index 719f2ef796..d78b33d4b2 100644
    MATROSKA_BLOCK_ADD_ID_TYPE_DVVC                   = 0x64767643, // MKBETAG('d','v','v','C')
  } MatroskaBlockAddIDType;
 diff --git a/libavformat/matroskadec.c b/libavformat/matroskadec.c
-index 8b5eda8213..2c9408359c 100644
+index 1900a93..3d8b7fc 100644
 --- a/libavformat/matroskadec.c
 +++ b/libavformat/matroskadec.c
 @@ -295,6 +295,7 @@ typedef struct MatroskaTrack {
@@ -42,9 +42,9 @@ index 8b5eda8213..2c9408359c 100644
          case MATROSKA_BLOCK_ADD_ID_TYPE_DVCC:
          case MATROSKA_BLOCK_ADD_ID_TYPE_DVVC:
              if ((ret = mkv_parse_dvcc_dvvc(s, st, track, &mapping->extradata)) < 0)
-@@ -3963,6 +3967,36 @@ static int matroska_parse_block_additional(MatroskaDemuxContext *matroska,
- 
-         return 0;
+@@ -3999,6 +4003,36 @@ static int matroska_parse_block_additional(MatroskaDemuxContext *matroska,
+         }
+         break;
      }
 +    case MATROSKA_BLOCK_ADD_ID_TYPE_SMPTE_12M: {
 +        if (size < 8) {
@@ -77,8 +77,8 @@ index 8b5eda8213..2c9408359c 100644
 +        return 0;
 +    }
      default:
-         break;
-     }
+         side_data = av_packet_new_side_data(pkt, AV_PKT_DATA_MATROSKA_BLOCKADDITIONAL,
+                                         size + (size_t)8);
 -- 
 2.52.0
 
