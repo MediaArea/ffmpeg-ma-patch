@@ -10,7 +10,7 @@ It is also possible to reduce the reserved space (or even eliminate it) for thos
  1 file changed, 59 insertions(+), 23 deletions(-)
 
 diff --git a/libavformat/matroskaenc.c b/libavformat/matroskaenc.c
-index 0bb3242..28821c4 100644
+index 53dbd73..b3e4429 100644
 --- a/libavformat/matroskaenc.c
 +++ b/libavformat/matroskaenc.c
 @@ -82,6 +82,8 @@
@@ -92,16 +92,16 @@ index 0bb3242..28821c4 100644
  static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
                             AVIOContext *pb, const AVStream *st,
                             mkv_track *track, const AVPacket *pkt,
-@@ -2858,7 +2880,7 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
-     // and BlockAdditions with three elements per BlockMore
-     // Don't forget to increment the number of BlockMore when adding
-     // support for writing a new blockadditional.
--    EBML_WRITER(5 + (1 + 3 * 3));
-+    EBML_WRITER(4 + (1 + 3 * 3) + MAX_MATROSKA_BLOCK_ADD_ITU_T_T35);
+@@ -2852,7 +2874,7 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
+     size_t side_data_size;
+     uint64_t additional_id;
+     unsigned track_number = track->track_num;
+-    EBML_WRITER(12);
++    EBML_WRITER(11 + MAX_MATROSKA_BLOCK_ADD_ITU_T_T35);
      int ret;
  
      mkv->cur_block.track  = track;
-@@ -2965,6 +2987,7 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
+@@ -2938,6 +2960,7 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
                                        MATROSKA_BLOCK_ADD_ID_ITU_T_T35);
              track->max_blockaddid = FFMAX(track->max_blockaddid,
                                            MATROSKA_BLOCK_ADD_ID_ITU_T_T35);
@@ -109,7 +109,7 @@ index 0bb3242..28821c4 100644
          }
      }
  
-@@ -3377,24 +3400,36 @@ after_cues:
+@@ -3350,24 +3373,36 @@ after_cues:
  
              for (unsigned i = 0; i < s->nb_streams; i++) {
                  const mkv_track *track = &mkv->tracks[i];
@@ -159,7 +159,7 @@ index 0bb3242..28821c4 100644
                  }
              }
          }
-@@ -3629,6 +3664,7 @@ static const AVCodecTag additional_subtitle_tags[] = {
+@@ -3602,6 +3637,7 @@ static const AVCodecTag additional_subtitle_tags[] = {
  #define FLAGS AV_OPT_FLAG_ENCODING_PARAM
  static const AVOption options[] = {
      { "reserve_index_space", "reserve a given amount of space (in bytes) at the beginning of the file for the index (cues)", OFFSET(reserve_cues_space), AV_OPT_TYPE_INT,   { .i64 = 0 },   0, INT_MAX,   FLAGS },

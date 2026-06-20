@@ -16,10 +16,10 @@ Subject: [PATCH 19/19] decklink_dec: support labels
  9 files changed, 363 insertions(+), 83 deletions(-)
 
 diff --git a/fftools/ffprobe.c b/fftools/ffprobe.c
-index 1cdd8e7..bff2df3 100644
+index f4ad270..81c5e4f 100644
 --- a/fftools/ffprobe.c
 +++ b/fftools/ffprobe.c
-@@ -1020,6 +1020,7 @@ static void print_pkt_side_data(AVTextFormatContext *tfc,
+@@ -1015,6 +1015,7 @@ static void print_pkt_side_data(AVTextFormatContext *tfc,
      const char *name = av_packet_side_data_name(sd->type);
  
      avtext_print_section_header(tfc, sd, id_data);
@@ -27,7 +27,7 @@ index 1cdd8e7..bff2df3 100644
      print_str("side_data_type", name ? name : "unknown");
      if (sd->type == AV_PKT_DATA_DISPLAYMATRIX && sd->size >= 9*4) {
          print_displaymatrix(tfc, (const int32_t*)sd->data);
-@@ -1368,14 +1369,32 @@ static void print_frame_side_data(AVTextFormatContext *tfc,
+@@ -1363,14 +1364,32 @@ static void print_frame_side_data(AVTextFormatContext *tfc,
              av_timecode_make_mpeg_tc_string(tcbuf, *(int64_t *)(sd->data));
              print_str("timecode", tcbuf);
          } else if (sd->type == AV_FRAME_DATA_S12M_TIMECODE && sd->size >= 8) {
@@ -404,7 +404,7 @@ index d78b33d..84debcf 100644
  /* IDs in the seekhead master */
  #define MATROSKA_ID_SEEKENTRY  0x4DBB
 diff --git a/libavformat/matroskadec.c b/libavformat/matroskadec.c
-index 3d8b7fc..0fea31f 100644
+index ea1216b..3cdfe91 100644
 --- a/libavformat/matroskadec.c
 +++ b/libavformat/matroskadec.c
 @@ -49,6 +49,7 @@
@@ -506,7 +506,7 @@ index 3d8b7fc..0fea31f 100644
                                           &track[j].stream->metadata, NULL);
                      found = 1;
                 }
-@@ -3463,6 +3502,17 @@ static int matroska_read_header(AVFormatContext *s)
+@@ -3467,6 +3506,17 @@ static int matroska_read_header(AVFormatContext *s)
  
      matroska_convert_tags(s);
  
@@ -524,7 +524,7 @@ index 3d8b7fc..0fea31f 100644
      return 0;
  }
  
-@@ -4009,29 +4059,8 @@ static int matroska_parse_block_additional(MatroskaDemuxContext *matroska,
+@@ -3978,29 +4028,8 @@ static int matroska_parse_block_additional(MatroskaDemuxContext *matroska,
              break;
          }
  
@@ -555,9 +555,9 @@ index 3d8b7fc..0fea31f 100644
 +        return av_packet_add_s12m_timecode_to_side_data(matroska->ctx, pkt, S12M_TIMECODE_FLAG_ID_PRESENT | S12M_TIMECODE_FLAG_TITLE_PRESENT, tc, id, mapping->title);
      }
      default:
-         side_data = av_packet_new_side_data(pkt, AV_PKT_DATA_MATROSKA_BLOCKADDITIONAL,
+         break;
 diff --git a/libavformat/matroskaenc.c b/libavformat/matroskaenc.c
-index cf5ddd0..3b3eb28 100644
+index bbc80e1..d35a37d 100644
 --- a/libavformat/matroskaenc.c
 +++ b/libavformat/matroskaenc.c
 @@ -203,9 +203,11 @@ typedef struct mkv_track {
