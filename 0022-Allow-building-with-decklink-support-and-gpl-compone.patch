@@ -1,0 +1,36 @@
+From dc67cfcde2d3a9f1e1577e804df4eb920d612797 Mon Sep 17 00:00:00 2001
+From: Maxime Gervais <gervais.maxime@gmail.com>
+Date: Tue, 15 Sep 2026 22:19:13 +0200
+Subject: [PATCH] Allow building with decklink support and gpl components
+
+Since the decklink driver is dynamically loaded at runtime,
+and API definitions are not creative work.
+
+Signed-off-by: Maxime Gervais <gervais.maxime@gmail.com>
+---
+ configure | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/configure b/configure
+index 046a0bd005..06af1cce1f 100755
+--- a/configure
++++ b/configure
+@@ -2027,7 +2027,6 @@ EXTERNAL_LIBRARY_GPL_LIST="
+ "
+ 
+ EXTERNAL_LIBRARY_NONFREE_LIST="
+-    decklink
+     libfdk_aac
+     libmpeghdec
+ "
+@@ -2053,6 +2052,7 @@ EXTERNAL_LIBRARY_LIST="
+     $EXTERNAL_LIBRARY_NONFREE_LIST
+     $EXTERNAL_LIBRARY_VERSION3_LIST
+     $EXTERNAL_LIBRARY_GPLV3_LIST
++    decklink
+     cairo
+     chromaprint
+     gcrypt
+-- 
+2.55.0
+
