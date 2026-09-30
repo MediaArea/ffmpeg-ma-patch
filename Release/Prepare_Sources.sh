@@ -12,7 +12,7 @@ set -e
 # Setup
 release_directory="$(readlink -f "$(dirname "${BASH_SOURCE}")")"
 version="${1}"
-sources="ffmpeg"
+sources=()
 build_options="$(<"${release_directory}/configure_options.txt")"
 
 if [[ -e "${version}" ]] ; then
@@ -88,7 +88,7 @@ pushd "${release_directory}/../../.."
                 rm -f ${archive}
             popd
         fi
-        sources="${sources} ${directory}"
+        sources+=("${directory}")
     done < "${release_directory}/dependencies.txt"
 popd
 
@@ -114,6 +114,10 @@ pushd "${release_directory}/../../.."
     rm -fr */.git*
     rm -fr ffmpeg/patches/.git*
 
-    XZ_OPT=-9e tar -cJ --owner=root --group=root -f ffmpeg-ma_${version}.tar.xz ${sources}
-    7za a -t7z -mx=9 -bd ffmpeg-ma_${version}.7z ${sources}
+    XZ_OPT=-9e tar -cJ --owner=root --group=root -f ffmpeg-ma_${version}.tar.xz ffmpeg "${sources[@]}"
+    7za a -t7z -mx=9 -bd ffmpeg-ma_${version}.7z ffmpeg "${sources[@]}"
+
+    for directory in "${sources[@]}" ; do
+        rm -fr "./${directory}"
+    done
 popd
