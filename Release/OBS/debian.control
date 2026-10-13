@@ -2,7 +2,7 @@ Source: ffmpeg-ma
 Section: utils
 Priority: optional
 Maintainer: MediaArea.net SARL <info@mediaarea.net>
-Build-Depends: debhelper (>= 12), nasm, cmake, meson, ninja-build, pkgconf, make, libasound2-dev, libfontconfig-dev, zlib1g-dev
+Build-Depends: debhelper (>= 12), dpkg-dev, nasm, cmake, meson, ninja-build, pkgconf, make, libasound2-dev, libfontconfig-dev, zlib1g-dev
 Standards-Version: 4.6.2
 
 Package: ffmpeg-ma
@@ -13,3 +13,16 @@ Conflicts: ffmpeg-ma
 Replaces: ffmpeg-ma
 Provides: ffmpeg-ma
 Description: FFmpeg binary with patches from MediaArea.net
+ FFmpeg binary and shared libraries with patches from MediaArea.net.
+
+Package: ffmpeg-ma-dev
+Section: libdevel
+Architecture: any
+Pre-Depends: ${misc:Pre-Depends}
+Depends: ffmpeg-ma (= ${binary:Version}), ${misc:Depends}
+Description: FFmpeg with patches from MediaArea.net - development files
+ FFmpeg binary and shared libraries with patches from MediaArea.net.
+ .
+ This package contains the headers, the pkg-config files and the examples
+ needed to compile and link applications using the libav*-ma and libsw*-ma
+ libraries.

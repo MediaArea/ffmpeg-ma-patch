@@ -7,6 +7,8 @@ export PATH := $(CURDIR)/output/bin:$(PATH)
 export LIBRARY_PATH := $(CURDIR)/output/lib
 export PKG_CONFIG_PATH :=$(CURDIR)/output/lib/pkgconfig
 
+DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
+
 configure: configure-stamp
 configure-stamp:
 	dh_testdir
@@ -39,7 +41,21 @@ configure-stamp:
 	# Copy DeckLinkSDK include files
 	cp -r ffmpeg/DeckLinkSDK/Linux/include/* output/include
 
-	cd ffmpeg && ./configure %BUILD_OPTIONS% --enable-alsa --extra-cflags=-I$(CURDIR)/output/include --extra-cxxflags=-I$(CURDIR)/output/include --extra-ldflags=-lstdc++
+	cd ffmpeg && ./configure %BUILD_OPTIONS% \
+		--enable-shared \
+		--disable-static \
+		--disable-stripping \
+		--progs-suffix=-ma \
+		--build-suffix=-ma \
+		--prefix=/usr \
+		--libdir=/usr/lib/$(DEB_HOST_MULTIARCH) \
+		--incdir=/usr/include/ffmpeg-ma \
+		--datadir=/usr/share/ffmpeg-ma \
+		--disable-doc \
+		--enable-alsa \
+		--extra-cflags=-I$(CURDIR)/output/include \
+		--extra-cxxflags=-I$(CURDIR)/output/include \
+		--extra-ldflags=-lstdc++
 
 	touch $@
 
@@ -62,10 +78,11 @@ install: build
 	dh_prep
 	dh_installdirs
 
-	install -dm 755 $(CURDIR)/debian/tmp/usr/bin
-	install -m 755 ffmpeg/ffmpeg_g $(CURDIR)/debian/tmp/usr/bin/ffmpeg-ma
-	install -m 755 ffmpeg/ffplay_g $(CURDIR)/debian/tmp/usr/bin/ffplay-ma
+	cd ffmpeg && $(MAKE) install DESTDIR=$(CURDIR)/debian/tmp
 	install -Dm 644 ffmpeg/patches/Release/HowToGPU.linux.txt $(CURDIR)/debian/tmp/usr/share/doc/ffmpeg-ma/HowToGPU.txt
+	# The Makefile shipped with the examples refers to the upstream pkg-config names, add the -ma suffix
+	sed -i -E '/^FFMPEG_LIBS=/,/^[[:space:]]*$$/ s/(libav(util|codec|format|device|filter)|libsw(scale|resample))/\1-ma/' \
+		$(CURDIR)/debian/tmp/usr/share/ffmpeg-ma/examples/Makefile
 
 # Build architecture-independent files here.
 binary-indep: build install

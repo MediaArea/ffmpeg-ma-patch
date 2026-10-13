@@ -1,3 +1,8 @@
 /usr/bin/ffmpeg-ma
+/usr/bin/ffprobe-ma
 /usr/bin/ffplay-ma
+/usr/lib/*/libav*-ma.so.*
+/usr/lib/*/libsw*-ma.so.*
+/usr/share/ffmpeg-ma/*.ffpreset
+/usr/share/ffmpeg-ma/ffprobe.xsd
 /usr/share/doc/ffmpeg-ma/HowToGPU.txt

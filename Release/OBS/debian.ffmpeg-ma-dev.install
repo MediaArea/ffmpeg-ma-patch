@@ -1,0 +1,5 @@
+/usr/include/ffmpeg-ma
+/usr/lib/*/libav*-ma.so
+/usr/lib/*/libsw*-ma.so
+/usr/lib/*/pkgconfig
+/usr/share/ffmpeg-ma/examples

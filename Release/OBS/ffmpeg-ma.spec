@@ -38,6 +38,14 @@ BuildRequires:  alternatives
 %description
 FFmpeg binary with patches from MediaArea.net
 
+%package devel
+Summary:        Development files for %{name}
+Group:          Development/Libraries/C and C++
+Requires:       %{name} = %{version}-%{release}
+
+%description devel
+Development files (headers, pkg-config files and examples) for %{name}.
+
 %prep
 %setup -q -n ffmpeg
 
@@ -74,13 +82,28 @@ ninja -C sdl/build install
 # Copy DeckLinkSDK include files
 cp -r DeckLinkSDK/Linux/include/* output/include
 
-./configure %BUILD_OPTIONS% --enable-alsa --extra-cflags="-Ioutput/include" --extra-cxxflags="-Ioutput/include" --extra-ldflags="-lstdc++"
+./configure %BUILD_OPTIONS% \
+    --enable-shared \
+    --disable-static \
+    --disable-stripping \
+    --progs-suffix=-ma \
+    --build-suffix=-ma \
+    --prefix=%{_prefix} \
+    --libdir=%{_libdir} \
+    --incdir=%{_includedir}/%{name} \
+    --datadir=%{_datadir}/%{name} \
+    --disable-doc \
+    --enable-alsa \
+    --extra-cflags="-Ioutput/include" \
+    --extra-cxxflags="-Ioutput/include" \
+    --extra-ldflags="-lstdc++"
 %__make
 
 %install
-%__install -D -m 0755 ffmpeg_g %{buildroot}/%{_bindir}/ffmpeg-ma
-%__install -D -m 0755 ffplay_g %{buildroot}/%{_bindir}/ffplay-ma
+%make_install
 %__install -D -m 0644 patches/Release/HowToGPU.linux.txt %{buildroot}/%{_docdir}/%{name}/HowToGPU.txt
+# The Makefile shipped with the examples refers to the upstream pkg-config names, add the -ma suffix
+sed -i -E '/^FFMPEG_LIBS=/,/^[[:space:]]*$/ s/(libav(util|codec|format|device|filter)|libsw(scale|resample))/\1-ma/' %{buildroot}%{_datadir}/%{name}/examples/Makefile
 
 %clean
 [ -d "%{buildroot}" -a "%{buildroot}" != "" ] && %__rm -rf "%{buildroot}"
@@ -88,6 +111,21 @@ cp -r DeckLinkSDK/Linux/include/* output/include
 %files
 %defattr(-,root,root,-)
 %{_bindir}/ffmpeg-ma
+%{_bindir}/ffprobe-ma
 %{_bindir}/ffplay-ma
+%{_libdir}/libav*-ma.so.*
+%{_libdir}/libsw*-ma.so.*
+%dir %{_datadir}/%{name}
+%{_datadir}/%{name}/*.ffpreset
+%{_datadir}/%{name}/ffprobe.xsd
 %dir %{_docdir}/%{name}
 %doc %{_docdir}/%{name}/HowToGPU.txt
+
+%files devel
+%defattr(-,root,root,-)
+%{_includedir}/%{name}
+%{_libdir}/libav*-ma.so
+%{_libdir}/libsw*-ma.so
+%{_libdir}/pkgconfig/libav*-ma.pc
+%{_libdir}/pkgconfig/libsw*-ma.pc
+%{_datadir}/%{name}/examples

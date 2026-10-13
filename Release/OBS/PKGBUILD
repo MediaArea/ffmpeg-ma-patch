@@ -9,7 +9,7 @@ arch=('x86_64')
 url="https://mediaarea.net"
 license=('GPL-3.0-or-later')
 options=('!lto')
-depends=('zlib' 'alsa-lib' 'fontconfig')
+depends=('zlib' 'alsa-lib' 'fontconfig' 'gcc-libs')
 makedepends=('coreutils' 'python' 'gcc' 'nasm' 'cmake' 'meson' 'ninja' 'pkgconf' 'make')
 source=("${pkgname}_${pkgver}.tar.xz")
 sha256sums=('SKIP')
@@ -53,14 +53,30 @@ build() {
     cp -r ffmpeg/DeckLinkSDK/Linux/include/* output/include
 
     cd ffmpeg
-    ./configure %BUILD_OPTIONS% --enable-alsa --extra-cflags="-I$PWD/../output/include" --extra-cxxflags="-I$PWD/../output/include" --extra-ldflags="-lstdc++"
+    ./configure %BUILD_OPTIONS% \
+        --enable-shared \
+        --disable-static \
+        --disable-stripping \
+        --progs-suffix=-ma \
+        --build-suffix=-ma \
+        --prefix=/usr \
+        --libdir=/usr/lib \
+        --incdir=/usr/include/${pkgname} \
+        --datadir=/usr/share/${pkgname} \
+        --disable-doc \
+        --enable-alsa \
+        --extra-cflags="-I$PWD/../output/include" \
+        --extra-cxxflags="-I$PWD/../output/include" \
+        --extra-ldflags="-lstdc++"
     make -j$(($(nproc)+1))
 }
 
 package() {
     cd "ffmpeg"
 
-    install -Dm755 ffmpeg "${pkgdir}/usr/bin/ffmpeg-ma"
-    install -Dm755 ffplay "${pkgdir}/usr/bin/ffplay-ma"
+    make DESTDIR="$pkgdir" install
     install -Dm644 patches/Release/HowToGPU.linux.txt "${pkgdir}/usr/share/doc/${pkgname}/HowToGPU.txt"
+    # The Makefile shipped with the examples refers to the upstream pkg-config names, add the -ma suffix
+    sed -i -E '/^FFMPEG_LIBS=/,/^[[:space:]]*$/ s/(libav(util|codec|format|device|filter)|libsw(scale|resample))/\1-ma/' \
+        "${pkgdir}/usr/share/${pkgname}/examples/Makefile"
 }
