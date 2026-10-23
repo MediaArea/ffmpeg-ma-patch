@@ -7,4 +7,3 @@ openh264:https://github.com/cisco/openh264/archive/refs/tags/v2.6.0.tar.gz
 vulkan-headers:https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.4.304.tar.gz
 shaderc:https://github.com/google/shaderc/archive/refs/tags/v2024.4.tar.gz
 sdl:https://github.com/libsdl-org/SDL/archive/refs/tags/release-2.32.10.tar.gz
-mediainfo-plugin:https://github.com/g-maxime/mediainfo-ffmpeg-plugin/archive/refs/heads/master.tar.gz

@@ -1,0 +1,122 @@
+Subject: [PATCH] Set KosmicKrisp Vulkan driver for macOS ARM64
+
+Derive the KosmicKrisp manifest and loader paths from the loaded libavutil
+image and configure VK_DRIVER_FILES before opening the Vulkan loader. Open
+the bundled loader by its absolute path because a bare dlopen() name does
+not search LC_RPATH.
+
+This works for all applications loading the FFmpeg libraries, including
+when ffmpeg is invoked through a symlink. The bundled KosmicKrisp driver is
+only available for macOS ARM64, so keep the setting limited to that target.
+
+---
+ libavutil/hwcontext_vulkan.c | 62 +++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 61 insertions(+), 1 deletion(-)
+
+diff --git a/libavutil/hwcontext_vulkan.c b/libavutil/hwcontext_vulkan.c
+index 0ddfafb..4d56b91 100644
+--- a/libavutil/hwcontext_vulkan.c
++++ b/libavutil/hwcontext_vulkan.c
+@@ -28,10 +28,17 @@
+ #else
+ #include <dlfcn.h>
+ #include <unistd.h>
+ #endif
+ 
++#if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
++#include <limits.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#endif
++
+ #include "thread.h"
+ 
+ #include "config.h"
+ #include "pixdesc.h"
+ #include "avstring.h"
+@@ -706,18 +713,71 @@ static int vkfmt_from_pixfmt2(AVHWDeviceContext *dev_ctx, enum AVPixelFormat p,
+ #if CONFIG_VULKAN_STATIC
+ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance,
+                                                                const char *pName);
+ #endif
+ 
++#if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
++static const char *set_kosmickrisp_driver(void)
++{
++    static char vk_driver_files[
++        PATH_MAX + sizeof("VK_DRIVER_FILES=/../lib/ffmpeg-ma/lib/libkosmickrisp_icd.json")];
++    static char vulkan_library[
++        PATH_MAX + sizeof("/../lib/ffmpeg-ma/lib/libvulkan.dylib")];
++    char resolved_path[PATH_MAX];
++    Dl_info info;
++    char *filename;
++    const char *relative_path;
++    int length;
++
++    if (!dladdr((const void *)set_kosmickrisp_driver, &info) ||
++        !info.dli_fname ||
++        !realpath(info.dli_fname, resolved_path))
++        return NULL;
++
++    filename = strrchr(resolved_path, '/');
++    if (!filename)
++        return NULL;
++    *filename = '\0';
++
++    /* Shared libavutil: <libdir>/libavutil...; static build: <bindir>/ffmpeg. */
++    relative_path = !strncmp(filename + 1, "libavutil", 9) ?
++                    "/ffmpeg-ma/lib/libkosmickrisp_icd.json" :
++                    "/../lib/ffmpeg-ma/lib/libkosmickrisp_icd.json";
++    length = snprintf(vk_driver_files, sizeof(vk_driver_files),
++                      "VK_DRIVER_FILES=%s%s", resolved_path, relative_path);
++    if (length < 0 || (size_t)length >= sizeof(vk_driver_files))
++        return NULL;
++
++    putenv(vk_driver_files);
++
++    length = snprintf(vulkan_library, sizeof(vulkan_library),
++                      "%s%s/libvulkan.dylib", resolved_path,
++                      !strncmp(filename + 1, "libavutil", 9) ?
++                      "/ffmpeg-ma/lib" : "/../lib/ffmpeg-ma/lib");
++    if (length < 0 || (size_t)length >= sizeof(vulkan_library))
++        return NULL;
++
++    return vulkan_library;
++}
++#endif
++
+ static int load_libvulkan(AVHWDeviceContext *ctx)
+ {
+     VulkanDevicePriv *p = ctx->hwctx;
+     AVVulkanDeviceContext *hwctx = &p->p;
+ 
+ #if CONFIG_VULKAN_STATIC
++#if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
++    set_kosmickrisp_driver();
++#endif
+     hwctx->get_proc_addr = vkGetInstanceProcAddr;
+ #else
++#if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
++    const char *vulkan_library = set_kosmickrisp_driver();
++    if (vulkan_library)
++        p->libvulkan = dlopen(vulkan_library, RTLD_NOW | RTLD_LOCAL);
++#endif
+     static const char *lib_names[] = {
+ #if defined(_WIN32)
+         "vulkan-1.dll",
+ #elif defined(__APPLE__)
+         "libvulkan.dylib",
+@@ -727,11 +787,11 @@ static int load_libvulkan(AVHWDeviceContext *ctx)
+         "libvulkan.so.1",
+         "libvulkan.so",
+ #endif
+     };
+ 
+-    for (int i = 0; i < FF_ARRAY_ELEMS(lib_names); i++) {
++    for (int i = 0; !p->libvulkan && i < FF_ARRAY_ELEMS(lib_names); i++) {
+         p->libvulkan = dlopen(lib_names[i], RTLD_NOW | RTLD_LOCAL);
+         if (p->libvulkan)
+             break;
+     }
+ 

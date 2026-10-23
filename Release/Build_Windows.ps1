@@ -22,6 +22,7 @@ $build_directory = "${root_directory}\build"
 $output_directory = "${root_directory}\output"
 $output_directory_posix = $output_directory -Replace '\\', '/'
 
+$version = (Get-Content "${release_directory}\version.txt" -Raw).Trim()
 $build_options = (Get-Content "${release_directory}\configure_options.txt" -Raw).Trim() -Split '\s+'
 $build_options = $build_options | Where-Object { $_ -Ne "--enable-decklink" } # Disable DeckLink support for Windows (not working)
 
