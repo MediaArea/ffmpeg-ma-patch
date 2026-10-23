@@ -17,10 +17,10 @@ This permits to handle by default more e.g. timecodes without having to set the 
  8 files changed, 35 insertions(+), 35 deletions(-)
 
 diff --git a/libavformat/matroskaenc.c b/libavformat/matroskaenc.c
-index 288ad5a876..936cf73c5c 100644
+index d17fdb3..f8ab282 100644
 --- a/libavformat/matroskaenc.c
 +++ b/libavformat/matroskaenc.c
-@@ -3707,7 +3707,7 @@ static const AVCodecTag additional_subtitle_tags[] = {
+@@ -3712,7 +3712,7 @@ static const AVCodecTag additional_subtitle_tags[] = {
  #define FLAGS AV_OPT_FLAG_ENCODING_PARAM
  static const AVOption options[] = {
      { "reserve_index_space", "reserve a given amount of space (in bytes) at the beginning of the file for the index (cues)", OFFSET(reserve_cues_space), AV_OPT_TYPE_INT,   { .i64 = 0 },   0, INT_MAX,   FLAGS },
@@ -30,7 +30,7 @@ index 288ad5a876..936cf73c5c 100644
      { "cluster_size_limit",  "store at most the provided amount of bytes in a cluster",                                     OFFSET(cluster_size_limit), AV_OPT_TYPE_INT  , { .i64 = -1 }, -1, INT_MAX,   FLAGS },
      { "cluster_time_limit",  "store at most the provided number of milliseconds in a cluster",                               OFFSET(cluster_time_limit), AV_OPT_TYPE_INT64, { .i64 = -1 }, -1, INT64_MAX, FLAGS },
 diff --git a/tests/ref/fate/matroska-avoid-negative-ts b/tests/ref/fate/matroska-avoid-negative-ts
-index b86ccdb36e..0f030fb9e7 100644
+index b86ccdb..0f030fb 100644
 --- a/tests/ref/fate/matroska-avoid-negative-ts
 +++ b/tests/ref/fate/matroska-avoid-negative-ts
 @@ -1,5 +1,5 @@
@@ -42,7 +42,7 @@ index b86ccdb36e..0f030fb9e7 100644
  #tb 0: 1/1000
  #media_type 0: video
 diff --git a/tests/ref/fate/matroska-ms-mode b/tests/ref/fate/matroska-ms-mode
-index bde90b7d34..74c087014a 100644
+index bde90b7..74c0870 100644
 --- a/tests/ref/fate/matroska-ms-mode
 +++ b/tests/ref/fate/matroska-ms-mode
 @@ -1,5 +1,5 @@
@@ -54,7 +54,7 @@ index bde90b7d34..74c087014a 100644
  #extradata 1:      114, 0xb6c80771
  #tb 0: 1/1000
 diff --git a/tests/ref/fate/matroska-qt-mode b/tests/ref/fate/matroska-qt-mode
-index 24577f07bc..c2e148be80 100644
+index 24577f0..c2e148b 100644
 --- a/tests/ref/fate/matroska-qt-mode
 +++ b/tests/ref/fate/matroska-qt-mode
 @@ -1,5 +1,5 @@
@@ -66,7 +66,7 @@ index 24577f07bc..c2e148be80 100644
  #tb 0: 1/1000
  #media_type 0: video
 diff --git a/tests/ref/fate/rgb24-mkv b/tests/ref/fate/rgb24-mkv
-index 4da78cf2ba..3e999c88ff 100644
+index 4da78cf..3e999c8 100644
 --- a/tests/ref/fate/rgb24-mkv
 +++ b/tests/ref/fate/rgb24-mkv
 @@ -1,5 +1,5 @@
@@ -78,7 +78,7 @@ index 4da78cf2ba..3e999c88ff 100644
  #media_type 0: video
  #codec_id 0: rawvideo
 diff --git a/tests/ref/lavf/mkv b/tests/ref/lavf/mkv
-index 3212ab893f..e586dcdb5a 100644
+index 3212ab8..e586dcd 100644
 --- a/tests/ref/lavf/mkv
 +++ b/tests/ref/lavf/mkv
 @@ -1,3 +1,3 @@
@@ -88,7 +88,7 @@ index 3212ab893f..e586dcdb5a 100644
 +320534 tests/data/lavf/lavf.mkv
  tests/data/lavf/lavf.mkv CRC=0x5df3232f
 diff --git a/tests/ref/lavf/mkv_attachment b/tests/ref/lavf/mkv_attachment
-index 25d6140311..2497f6c336 100644
+index 25d6140..2497f6c 100644
 --- a/tests/ref/lavf/mkv_attachment
 +++ b/tests/ref/lavf/mkv_attachment
 @@ -1,3 +1,3 @@
@@ -98,12 +98,12 @@ index 25d6140311..2497f6c336 100644
 +472684 tests/data/lavf/lavf.mkv_attachment
  tests/data/lavf/lavf.mkv_attachment CRC=0x5df3232f
 diff --git a/tests/ref/seek/lavf-mkv b/tests/ref/seek/lavf-mkv
-index 40af3381ca..af5d8cf770 100644
+index 165c127..356ae42 100644
 --- a/tests/ref/seek/lavf-mkv
 +++ b/tests/ref/seek/lavf-mkv
 @@ -1,48 +1,48 @@
--ret: 0         st: 1 flags:1 dts:-0.011000 pts:-0.011000 pos:    693 size:   208
-+ret: 0         st: 1 flags:1 dts:-0.011000 pts:-0.011000 pos:    770 size:   208
+-ret: 0         st: 1 flags:1 dts:-0.011000 pts:-0.011000 pos:    693 size:   208 skip:481 discard:0
++ret: 0         st: 1 flags:1 dts:-0.011000 pts:-0.011000 pos:    770 size:   208 skip:481 discard:0
  ret: 0         st:-1 flags:0  ts:-1.000000
 -ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:    909 size: 27837
 +ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:    986 size: 27837
@@ -118,8 +118,8 @@ index 40af3381ca..af5d8cf770 100644
 +ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:    986 size: 27837
  ret:-1         st: 1 flags:0  ts: 2.577000
  ret: 0         st: 1 flags:1  ts: 1.471000
--ret: 0         st: 1 flags:1 dts: 0.982000 pts: 0.982000 pos: 320169 size:   209
-+ret: 0         st: 1 flags:1 dts: 0.982000 pts: 0.982000 pos: 320246 size:   209
+-ret: 0         st: 1 flags:1 dts: 0.982000 pts: 0.982000 pos: 320169 size:   209 skip:0 discard:347
++ret: 0         st: 1 flags:1 dts: 0.982000 pts: 0.982000 pos: 320246 size:   209 skip:0 discard:347
  ret: 0         st:-1 flags:0  ts: 0.365002
 -ret: 0         st: 0 flags:1 dts: 0.480000 pts: 0.480000 pos: 146877 size: 27925
 +ret: 0         st: 0 flags:1 dts: 0.480000 pts: 0.480000 pos: 146954 size: 27925
@@ -131,11 +131,11 @@ index 40af3381ca..af5d8cf770 100644
 -ret: 0         st: 0 flags:1 dts: 0.960000 pts: 0.960000 pos: 292325 size: 27834
 +ret: 0         st: 0 flags:1 dts: 0.960000 pts: 0.960000 pos: 292402 size: 27834
  ret: 0         st: 1 flags:0  ts:-0.058000
--ret: 0         st: 1 flags:1 dts:-0.011000 pts:-0.011000 pos:    693 size:   208
-+ret: 0         st: 1 flags:1 dts:-0.011000 pts:-0.011000 pos:    770 size:   208
+-ret: 0         st: 1 flags:1 dts:-0.011000 pts:-0.011000 pos:    693 size:   208 skip:481 discard:0
++ret: 0         st: 1 flags:1 dts:-0.011000 pts:-0.011000 pos:    770 size:   208 skip:481 discard:0
  ret: 0         st: 1 flags:1  ts: 2.836000
--ret: 0         st: 1 flags:1 dts: 0.982000 pts: 0.982000 pos: 320169 size:   209
-+ret: 0         st: 1 flags:1 dts: 0.982000 pts: 0.982000 pos: 320246 size:   209
+-ret: 0         st: 1 flags:1 dts: 0.982000 pts: 0.982000 pos: 320169 size:   209 skip:0 discard:347
++ret: 0         st: 1 flags:1 dts: 0.982000 pts: 0.982000 pos: 320246 size:   209 skip:0 discard:347
  ret:-1         st:-1 flags:0  ts: 1.730004
  ret: 0         st:-1 flags:1  ts: 0.624171
 -ret: 0         st: 0 flags:1 dts: 0.480000 pts: 0.480000 pos: 146877 size: 27925
@@ -148,8 +148,8 @@ index 40af3381ca..af5d8cf770 100644
 +ret: 0         st: 0 flags:1 dts: 0.960000 pts: 0.960000 pos: 292402 size: 27834
  ret:-1         st: 1 flags:0  ts: 1.307000
  ret: 0         st: 1 flags:1  ts: 0.201000
--ret: 0         st: 1 flags:1 dts:-0.011000 pts:-0.011000 pos:    693 size:   208
-+ret: 0         st: 1 flags:1 dts:-0.011000 pts:-0.011000 pos:    770 size:   208
+-ret: 0         st: 1 flags:1 dts:-0.011000 pts:-0.011000 pos:    693 size:   208 skip:481 discard:0
++ret: 0         st: 1 flags:1 dts:-0.011000 pts:-0.011000 pos:    770 size:   208 skip:481 discard:0
  ret: 0         st:-1 flags:0  ts:-0.904994
 -ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:    909 size: 27837
 +ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:    986 size: 27837
@@ -164,8 +164,8 @@ index 40af3381ca..af5d8cf770 100644
 +ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:    986 size: 27837
  ret:-1         st: 1 flags:0  ts: 2.672000
  ret: 0         st: 1 flags:1  ts: 1.566000
--ret: 0         st: 1 flags:1 dts: 0.982000 pts: 0.982000 pos: 320169 size:   209
-+ret: 0         st: 1 flags:1 dts: 0.982000 pts: 0.982000 pos: 320246 size:   209
+-ret: 0         st: 1 flags:1 dts: 0.982000 pts: 0.982000 pos: 320169 size:   209 skip:0 discard:347
++ret: 0         st: 1 flags:1 dts: 0.982000 pts: 0.982000 pos: 320246 size:   209 skip:0 discard:347
  ret: 0         st:-1 flags:0  ts: 0.460008
 -ret: 0         st: 0 flags:1 dts: 0.480000 pts: 0.480000 pos: 146877 size: 27925
 +ret: 0         st: 0 flags:1 dts: 0.480000 pts: 0.480000 pos: 146954 size: 27925
