@@ -1,20 +1,22 @@
-Subject: [PATCH] Set KosmicKrisp Vulkan driver for macOS ARM64
+Subject: [PATCH] Load bundled KosmicKrisp directly on macOS ARM64
 
-Derive the KosmicKrisp manifest and loader paths from the loaded libavutil
-image and configure VK_DRIVER_FILES before opening the Vulkan loader. Open
-the bundled loader by its absolute path because a bare dlopen() name does
-not search LC_RPATH.
+Use VK_LUNARG_direct_driver_loading to open the bundled KosmicKrisp ICD
+without modifying VK_DRIVER_FILES or depending on its JSON manifest.
+Respect an existing user driver selection (VK_DRIVER_FILES,
+VK_ICD_FILENAMES or VK_ADD_DRIVER_FILES) and fall back to normal loader
+discovery when direct loading is unavailable.
 
-This works for all applications loading the FFmpeg libraries, including
-when ffmpeg is invoked through a symlink. The bundled KosmicKrisp driver is
-only available for macOS ARM64, so keep the setting limited to that target.
+Log why the bundled loader or driver could not be used, and hint that
+macOS 26 is required when the bundled driver reports no device.
+
+The bundled driver is only available for macOS ARM64.
 
 ---
- libavutil/hwcontext_vulkan.c | 62 +++++++++++++++++++++++++++++++++++++++++++-
- 1 file changed, 61 insertions(+), 1 deletion(-)
+ libavutil/hwcontext_vulkan.c | 173 ++++++++++++++++++++++++++++++++++-
+ 1 file changed, 172 insertions(+), 1 deletion(-)
 
 diff --git a/libavutil/hwcontext_vulkan.c b/libavutil/hwcontext_vulkan.c
-index 0ddfafb..4d56b91 100644
+index 0ddfafb..865e900 100644
 --- a/libavutil/hwcontext_vulkan.c
 +++ b/libavutil/hwcontext_vulkan.c
 @@ -28,10 +28,17 @@
@@ -35,54 +37,76 @@ index 0ddfafb..4d56b91 100644
  #include "config.h"
  #include "pixdesc.h"
  #include "avstring.h"
-@@ -706,18 +713,71 @@ static int vkfmt_from_pixfmt2(AVHWDeviceContext *dev_ctx, enum AVPixelFormat p,
+@@ -145,10 +152,15 @@ typedef struct VulkanDevicePriv {
+      */
+     AVVulkanDeviceContext p;
+ 
+     /* Vulkan library and loader functions */
+     void *libvulkan;
++#if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
++    void *libvulkan_driver;
++    PFN_vkGetInstanceProcAddrLUNARG driver_get_proc_addr;
++    int direct_driver_loading;
++#endif
+ 
+     FFVulkanContext    vkctx;
+     AVVulkanDeviceQueueFamily *compute_qf;
+     AVVulkanDeviceQueueFamily *transfer_qf;
+ 
+@@ -706,18 +718,123 @@ static int vkfmt_from_pixfmt2(AVHWDeviceContext *dev_ctx, enum AVPixelFormat p,
  #if CONFIG_VULKAN_STATIC
  VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance,
                                                                 const char *pName);
  #endif
  
 +#if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
-+static const char *set_kosmickrisp_driver(void)
++static int get_kosmickrisp_runtime_dir(AVHWDeviceContext *ctx,
++                                       char *runtime_dir, size_t size)
 +{
-+    static char vk_driver_files[
-+        PATH_MAX + sizeof("VK_DRIVER_FILES=/../lib/ffmpeg-ma/lib/libkosmickrisp_icd.json")];
-+    static char vulkan_library[
-+        PATH_MAX + sizeof("/../lib/ffmpeg-ma/lib/libvulkan.dylib")];
 +    char resolved_path[PATH_MAX];
 +    Dl_info info;
 +    char *filename;
-+    const char *relative_path;
 +    int length;
 +
-+    if (!dladdr((const void *)set_kosmickrisp_driver, &info) ||
-+        !info.dli_fname ||
-+        !realpath(info.dli_fname, resolved_path))
-+        return NULL;
++    if (!dladdr((const void *)get_kosmickrisp_runtime_dir, &info)) {
++        av_log(ctx, AV_LOG_VERBOSE, "KosmicKrisp: unable to locate libavutil\n");
++        return AVERROR_UNKNOWN;
++    }
++    if (!info.dli_fname || !realpath(info.dli_fname, resolved_path)) {
++        av_log(ctx, AV_LOG_VERBOSE,
++               "KosmicKrisp: unable to resolve libavutil path '%s'\n",
++               info.dli_fname ? info.dli_fname : "(null)");
++        return AVERROR_UNKNOWN;
++    }
 +
 +    filename = strrchr(resolved_path, '/');
 +    if (!filename)
-+        return NULL;
++        return AVERROR_UNKNOWN;
 +    *filename = '\0';
 +
 +    /* Shared libavutil: <libdir>/libavutil...; static build: <bindir>/ffmpeg. */
-+    relative_path = !strncmp(filename + 1, "libavutil", 9) ?
-+                    "/ffmpeg-ma/lib/libkosmickrisp_icd.json" :
-+                    "/../lib/ffmpeg-ma/lib/libkosmickrisp_icd.json";
-+    length = snprintf(vk_driver_files, sizeof(vk_driver_files),
-+                      "VK_DRIVER_FILES=%s%s", resolved_path, relative_path);
-+    if (length < 0 || (size_t)length >= sizeof(vk_driver_files))
-+        return NULL;
-+
-+    putenv(vk_driver_files);
-+
-+    length = snprintf(vulkan_library, sizeof(vulkan_library),
-+                      "%s%s/libvulkan.dylib", resolved_path,
++    length = snprintf(runtime_dir, size, "%s%s", resolved_path,
 +                      !strncmp(filename + 1, "libavutil", 9) ?
 +                      "/ffmpeg-ma/lib" : "/../lib/ffmpeg-ma/lib");
-+    if (length < 0 || (size_t)length >= sizeof(vulkan_library))
-+        return NULL;
++    if (length < 0 || (size_t)length >= size)
++        return AVERROR(ENAMETOOLONG);
 +
-+    return vulkan_library;
++    return 0;
++}
++
++static int user_driver_files_configured(void)
++{
++    static const char *const vars[] = {
++        "VK_DRIVER_FILES", "VK_ICD_FILENAMES", "VK_ADD_DRIVER_FILES",
++    };
++
++    for (int i = 0; i < FF_ARRAY_ELEMS(vars); i++) {
++        const char *value = getenv(vars[i]);
++        if (value && *value)
++            return 1;
++    }
++
++    return 0;
 +}
 +#endif
 +
@@ -92,22 +116,68 @@ index 0ddfafb..4d56b91 100644
      AVVulkanDeviceContext *hwctx = &p->p;
  
  #if CONFIG_VULKAN_STATIC
-+#if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
-+    set_kosmickrisp_driver();
-+#endif
      hwctx->get_proc_addr = vkGetInstanceProcAddr;
  #else
 +#if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
-+    const char *vulkan_library = set_kosmickrisp_driver();
-+    if (vulkan_library)
-+        p->libvulkan = dlopen(vulkan_library, RTLD_NOW | RTLD_LOCAL);
++    char runtime_dir[PATH_MAX];
++    char vulkan_library[PATH_MAX + sizeof("/libvulkan.dylib")];
++    char kosmickrisp_library[PATH_MAX + sizeof("/libvulkan_kosmickrisp.dylib")];
++    int length;
++
++    if (!get_kosmickrisp_runtime_dir(ctx, runtime_dir, sizeof(runtime_dir))) {
++        length = snprintf(vulkan_library, sizeof(vulkan_library),
++                          "%s/libvulkan.dylib", runtime_dir);
++        if (length < 0 || (size_t)length >= sizeof(vulkan_library)) {
++            av_log(ctx, AV_LOG_VERBOSE,
++                   "KosmicKrisp: runtime path too long, using regular loader search\n");
++        } else {
++            av_log(ctx, AV_LOG_VERBOSE, "KosmicKrisp: using Vulkan loader '%s'\n",
++                   vulkan_library);
++            dlerror();
++            p->libvulkan = dlopen(vulkan_library, RTLD_NOW | RTLD_LOCAL);
++            if (!p->libvulkan) {
++                const char *error = dlerror();
++                av_log(ctx, AV_LOG_VERBOSE,
++                       "KosmicKrisp: unable to open '%s': %s\n",
++                       vulkan_library, error ? error : "unknown error");
++            }
++        }
++    }
++
++    if (p->libvulkan && !user_driver_files_configured()) {
++        length = snprintf(kosmickrisp_library, sizeof(kosmickrisp_library),
++                          "%s/libvulkan_kosmickrisp.dylib", runtime_dir);
++        if (length >= 0 && (size_t)length < sizeof(kosmickrisp_library)) {
++            dlerror();
++            p->libvulkan_driver = dlopen(kosmickrisp_library, RTLD_NOW | RTLD_LOCAL);
++            if (!p->libvulkan_driver) {
++                const char *error = dlerror();
++                av_log(ctx, AV_LOG_VERBOSE,
++                       "KosmicKrisp: unable to open '%s': %s\n",
++                       kosmickrisp_library, error ? error : "unknown error");
++            } else {
++                p->driver_get_proc_addr =
++                    (PFN_vkGetInstanceProcAddrLUNARG)dlsym(
++                        p->libvulkan_driver, "vk_icdGetInstanceProcAddr");
++                if (!p->driver_get_proc_addr) {
++                    av_log(ctx, AV_LOG_VERBOSE,
++                           "KosmicKrisp: vk_icdGetInstanceProcAddr not found\n");
++                    dlclose(p->libvulkan_driver);
++                    p->libvulkan_driver = NULL;
++                }
++            }
++        }
++    } else if (p->libvulkan) {
++        av_log(ctx, AV_LOG_VERBOSE,
++               "KosmicKrisp: using user-provided Vulkan driver configuration\n");
++    }
 +#endif
      static const char *lib_names[] = {
  #if defined(_WIN32)
          "vulkan-1.dll",
  #elif defined(__APPLE__)
          "libvulkan.dylib",
-@@ -727,11 +787,11 @@ static int load_libvulkan(AVHWDeviceContext *ctx)
+@@ -727,11 +844,11 @@ static int load_libvulkan(AVHWDeviceContext *ctx)
          "libvulkan.so.1",
          "libvulkan.so",
  #endif
@@ -120,3 +190,123 @@ index 0ddfafb..4d56b91 100644
              break;
      }
  
+@@ -752,10 +869,15 @@ typedef struct VulkanOptExtension {
+ } VulkanOptExtension;
+ 
+ static const VulkanOptExtension optional_instance_exts[] = {
+ #ifdef __APPLE__
+     { VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME,          FF_VK_EXT_NO_FLAG                },
++#if defined(__aarch64__) || defined(__arm64__)
++#ifdef VK_LUNARG_direct_driver_loading
++    { VK_LUNARG_DIRECT_DRIVER_LOADING_EXTENSION_NAME,         FF_VK_EXT_NO_FLAG                },
++#endif
++#endif
+ #endif
+     { 0 },
+ };
+ 
+ static const VulkanOptExtension optional_device_exts[] = {
+@@ -1284,10 +1406,21 @@ static int create_instance(AVHWDeviceContext *ctx, AVDictionary *opts,
+     };
+     VkInstanceCreateInfo inst_props = {
+         .sType            = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+         .pApplicationInfo = &application_info,
+     };
++#if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__)) && \
++    defined(VK_LUNARG_direct_driver_loading)
++    VkDirectDriverLoadingInfoLUNARG direct_driver_info = {
++        .sType = VK_STRUCTURE_TYPE_DIRECT_DRIVER_LOADING_INFO_LUNARG,
++    };
++    VkDirectDriverLoadingListLUNARG direct_driver_list = {
++        .sType = VK_STRUCTURE_TYPE_DIRECT_DRIVER_LOADING_LIST_LUNARG,
++        .mode  = VK_DIRECT_DRIVER_LOADING_MODE_EXCLUSIVE_LUNARG,
++    };
++    int direct_driver_loading = 0;
++#endif
+ 
+     if (!hwctx->get_proc_addr) {
+         err = load_libvulkan(ctx);
+         if (err < 0)
+             return err;
+@@ -1310,10 +1443,21 @@ static int create_instance(AVHWDeviceContext *ctx, AVDictionary *opts,
+     hwctx->enabled_inst_extensions = inst_props.ppEnabledExtensionNames;
+     hwctx->nb_enabled_inst_extensions = inst_props.enabledExtensionCount;
+     if (err < 0)
+         goto fail;
+ 
++#if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__)) && \
++    defined(VK_LUNARG_direct_driver_loading)
++    for (int i = 0; i < inst_props.enabledExtensionCount; i++) {
++        if (!strcmp(inst_props.ppEnabledExtensionNames[i],
++                    VK_LUNARG_DIRECT_DRIVER_LOADING_EXTENSION_NAME)) {
++            direct_driver_loading = 1;
++            break;
++        }
++    }
++#endif
++
+     /* Enable debug features if needed */
+     if (*debug_mode == FF_VULKAN_DEBUG_VALIDATE) {
+         static const VkValidationFeatureEnableEXT feat_list_validate[] = {
+             VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT,
+             VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_RESERVE_BINDING_SLOT_EXT,
+@@ -1349,10 +1493,28 @@ static int create_instance(AVHWDeviceContext *ctx, AVDictionary *opts,
+             break;
+         }
+     }
+ #endif
+ 
++#if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__)) && \
++    defined(VK_LUNARG_direct_driver_loading)
++    if (direct_driver_loading && p->driver_get_proc_addr) {
++        direct_driver_info.pfnGetInstanceProcAddr = p->driver_get_proc_addr;
++        direct_driver_list.driverCount = 1;
++        direct_driver_list.pDrivers = &direct_driver_info;
++        direct_driver_list.pNext = inst_props.pNext;
++        inst_props.pNext = &direct_driver_list;
++        p->direct_driver_loading = 1;
++        av_log(ctx, AV_LOG_VERBOSE,
++               "KosmicKrisp: using direct driver loading\n");
++    } else if (p->driver_get_proc_addr) {
++        av_log(ctx, AV_LOG_VERBOSE,
++               "KosmicKrisp: loader lacks " VK_LUNARG_DIRECT_DRIVER_LOADING_EXTENSION_NAME
++               ", using regular driver discovery\n");
++    }
++#endif
++
+     /* Try to create the instance */
+     ret = vk->CreateInstance(&inst_props, hwctx->alloc, &hwctx->inst);
+ 
+     /* Check for errors */
+     if (ret != VK_SUCCESS) {
+@@ -1435,10 +1597,15 @@ static int find_device(AVHWDeviceContext *ctx, VulkanDeviceSelection *select)
+     VkPhysicalDeviceDrmPropertiesEXT *drm_prop = NULL;
+ 
+     ret = vk->EnumeratePhysicalDevices(hwctx->inst, &num, NULL);
+     if (ret != VK_SUCCESS || !num) {
+         av_log(ctx, AV_LOG_ERROR, "No devices found: %s!\n", ff_vk_ret2str(ret));
++#if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
++        if (p->direct_driver_loading)
++            av_log(ctx, AV_LOG_ERROR,
++                   "The bundled KosmicKrisp driver requires macOS 26 or newer.\n");
++#endif
+         return AVERROR(ENODEV);
+     }
+ 
+     devices = av_malloc_array(num, sizeof(VkPhysicalDevice));
+     if (!devices)
+@@ -1840,10 +2007,14 @@ static void vulkan_device_free(AVHWDeviceContext *ctx)
+                                           hwctx->alloc);
+ 
+     if (hwctx->inst)
+         vk->DestroyInstance(hwctx->inst, hwctx->alloc);
+ 
++#if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
++    if (p->libvulkan_driver)
++        dlclose(p->libvulkan_driver);
++#endif
+     if (p->libvulkan)
+         dlclose(p->libvulkan);
+ 
+     RELEASE_PROPS(hwctx->enabled_inst_extensions, hwctx->nb_enabled_inst_extensions);
+     RELEASE_PROPS(hwctx->enabled_dev_extensions, hwctx->nb_enabled_dev_extensions);

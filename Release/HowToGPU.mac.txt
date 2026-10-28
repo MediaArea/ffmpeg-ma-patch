@@ -10,8 +10,8 @@ KosmicKrisp is implemented on top of Metal 4 and requires:
  * macOS 26 or newer.
 
 The runtime is stored next to the binaries in lib/ffmpeg-ma/lib. The ffmpeg,
-ffprobe and ffplay executables automatically point VK_DRIVER_FILES to this
-runtime.
+ffprobe and ffplay executables directly load the bundled KosmicKrisp driver;
+no environment variable or ICD JSON manifest is required.
 
 Checking the installation
 -------------------------
@@ -23,3 +23,13 @@ Vulkan device(s) found and exit without error:
 
 If the error "Unable to open the libvulkan library!" is displayed, the archive
 is incomplete. If no device is found, the macOS version or the hardware is unsupported.
+
+The "KosmicKrisp:" lines displayed with -v verbose tell which Vulkan loader
+and driver are used, or why the bundled ones could not be loaded.
+
+Using another Vulkan driver
+---------------------------
+
+Setting VK_DRIVER_FILES, VK_ICD_FILENAMES or VK_ADD_DRIVER_FILES disables
+the bundled KosmicKrisp driver: the Vulkan loader then uses the driver(s)
+listed in these variables instead.
