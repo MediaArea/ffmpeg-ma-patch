@@ -98,7 +98,7 @@ index 25d6140..2497f6c 100644
 +472684 tests/data/lavf/lavf.mkv_attachment
  tests/data/lavf/lavf.mkv_attachment CRC=0x5df3232f
 diff --git a/tests/ref/seek/lavf-mkv b/tests/ref/seek/lavf-mkv
-index 165c127..356ae42 100644
+index 2d0a2a7..2865da9 100644
 --- a/tests/ref/seek/lavf-mkv
 +++ b/tests/ref/seek/lavf-mkv
 @@ -1,48 +1,48 @@
@@ -131,8 +131,8 @@ index 165c127..356ae42 100644
 -ret: 0         st: 0 flags:1 dts: 0.960000 pts: 0.960000 pos: 292325 size: 27834
 +ret: 0         st: 0 flags:1 dts: 0.960000 pts: 0.960000 pos: 292402 size: 27834
  ret: 0         st: 1 flags:0  ts:-0.058000
--ret: 0         st: 1 flags:1 dts:-0.011000 pts:-0.011000 pos:    693 size:   208 skip:481 discard:0
-+ret: 0         st: 1 flags:1 dts:-0.011000 pts:-0.011000 pos:    770 size:   208 skip:481 discard:0
+-ret: 0         st: 1 flags:1 dts:-0.011000 pts:-0.011000 pos:    693 size:   208
++ret: 0         st: 1 flags:1 dts:-0.011000 pts:-0.011000 pos:    770 size:   208
  ret: 0         st: 1 flags:1  ts: 2.836000
 -ret: 0         st: 1 flags:1 dts: 0.982000 pts: 0.982000 pos: 320169 size:   209 skip:0 discard:347
 +ret: 0         st: 1 flags:1 dts: 0.982000 pts: 0.982000 pos: 320246 size:   209 skip:0 discard:347
@@ -148,8 +148,8 @@ index 165c127..356ae42 100644
 +ret: 0         st: 0 flags:1 dts: 0.960000 pts: 0.960000 pos: 292402 size: 27834
  ret:-1         st: 1 flags:0  ts: 1.307000
  ret: 0         st: 1 flags:1  ts: 0.201000
--ret: 0         st: 1 flags:1 dts:-0.011000 pts:-0.011000 pos:    693 size:   208 skip:481 discard:0
-+ret: 0         st: 1 flags:1 dts:-0.011000 pts:-0.011000 pos:    770 size:   208 skip:481 discard:0
+-ret: 0         st: 1 flags:1 dts:-0.011000 pts:-0.011000 pos:    693 size:   208
++ret: 0         st: 1 flags:1 dts:-0.011000 pts:-0.011000 pos:    770 size:   208
  ret: 0         st:-1 flags:0  ts:-0.904994
 -ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:    909 size: 27837
 +ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:    986 size: 27837
