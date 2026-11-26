@@ -1,4 +1,4 @@
-From 4f2bfcfaead38fc9ca897057382b2f25405d96b2 Mon Sep 17 00:00:00 2001
+From 7f41103d1bd25ac3b41730a9420daffc399cc4d6 Mon Sep 17 00:00:00 2001
 From: Jerome Martinez <jerome@mediaarea.net>
 Date: Wed, 3 Sep 2025 21:33:50 +0200
 Subject: [PATCH 08/19] matroskaenc: reserve_video_track_space option
@@ -6,11 +6,11 @@ Subject: [PATCH 08/19] matroskaenc: reserve_video_track_space option
 The number of block additions is not known in advance, so we need to be able to set more reserved space for when we add a lot more block additions.
 It is also possible to reduce the reserved space (or even eliminate it) for those who want to keep the smallest header possible.
 ---
- libavformat/matroskaenc.c | 81 ++++++++++++++++++++++++++++-----------
- 1 file changed, 59 insertions(+), 22 deletions(-)
+ libavformat/matroskaenc.c | 83 ++++++++++++++++++++++++++++-----------
+ 1 file changed, 61 insertions(+), 22 deletions(-)
 
 diff --git a/libavformat/matroskaenc.c b/libavformat/matroskaenc.c
-index 796d73c3cc..288ad5a876 100644
+index 5190cf0..a3ee168 100644
 --- a/libavformat/matroskaenc.c
 +++ b/libavformat/matroskaenc.c
 @@ -82,6 +82,8 @@
@@ -37,8 +37,8 @@ index 796d73c3cc..288ad5a876 100644
 +    int                 reserve_video_track_space;
      int                 cluster_size_limit;
      int64_t             cluster_time_limit;
-     int                 write_crc;
-@@ -1735,19 +1739,12 @@ static void mkv_write_blockadditionmapping(AVFormatContext *s, const MatroskaMux
+     /// the clock of the file, in nanoseconds, 0 to pick it
+@@ -1709,19 +1713,12 @@ static void mkv_write_blockadditionmapping(AVFormatContext *s, const MatroskaMux
                                             const AVCodecParameters *par, AVIOContext *pb,
                                             mkv_track *track, const AVStream *st)
  {
@@ -60,11 +60,11 @@ index 796d73c3cc..288ad5a876 100644
      }
  
  #if CONFIG_MATROSKA_MUXER
-@@ -2860,6 +2857,31 @@ static void mkv_write_blockadditional(EbmlWriter *writer, const uint8_t *buf,
+@@ -2857,6 +2854,31 @@ static void mkv_write_blockadditional(EbmlWriter *writer, const uint8_t *buf,
      ebml_writer_close_master(writer);
  }
  
-+static int mkv_simulate_blockadditional_header(AVFormatContext *s, int* remaining_video_track_space, uint64_t additional_type, uint64_t additional_id)
++static int mkv_simulate_blockadditional_header(AVFormatContext *s, int *remaining_video_track_space, uint64_t additional_type, uint64_t additional_id)
 +{
 +    int size = 0;
 +    size += uint_size(MATROSKA_ID_BLKADDIDTYPE) + 1 + uint_size(additional_type);
@@ -92,7 +92,7 @@ index 796d73c3cc..288ad5a876 100644
  static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
                             AVIOContext *pb, const AVStream *st,
                             mkv_track *track, const AVPacket *pkt,
-@@ -2879,7 +2901,7 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
+@@ -2876,7 +2898,7 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
      // and BlockAdditions with three elements per BlockMore
      // Don't forget to increment the number of BlockMore when adding
      // support for writing a new blockadditional.
@@ -101,7 +101,23 @@ index 796d73c3cc..288ad5a876 100644
      int ret;
  
      mkv->cur_block.track  = track;
-@@ -3005,6 +3027,7 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
+@@ -2963,6 +2985,7 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
+                                       MATROSKA_BLOCK_ADD_ID_ITU_T_T35);
+             track->max_blockaddid = FFMAX(track->max_blockaddid,
+                                           MATROSKA_BLOCK_ADD_ID_ITU_T_T35);
++            track->itu_t_t35_count = 1;
+         }
+         side_data = av_packet_get_side_data(pkt,
+                                             AV_PKT_DATA_DYNAMIC_HDR_SMPTE_2094_APP5,
+@@ -2984,6 +3007,7 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
+                                       MATROSKA_BLOCK_ADD_ID_ITU_T_T35);
+             track->max_blockaddid = FFMAX(track->max_blockaddid,
+                                           MATROSKA_BLOCK_ADD_ID_ITU_T_T35);
++            track->itu_t_t35_count = 1;
+         }
+         side_data = av_packet_get_side_data(pkt, AV_PKT_DATA_LCEVC,
+                                             &side_data_size);
+@@ -3003,6 +3027,7 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
                                        MATROSKA_BLOCK_ADD_ID_ITU_T_T35);
              track->max_blockaddid = FFMAX(track->max_blockaddid,
                                            MATROSKA_BLOCK_ADD_ID_ITU_T_T35);
@@ -109,7 +125,7 @@ index 796d73c3cc..288ad5a876 100644
          }
      }
  
-@@ -3420,24 +3443,37 @@ after_cues:
+@@ -3425,24 +3450,37 @@ after_cues:
  
          for (unsigned i = 0; i < s->nb_streams; i++) {
              const mkv_track *track = &mkv->tracks[i];
@@ -126,7 +142,7 @@ index 796d73c3cc..288ad5a876 100644
 -            av_assert0(track->max_blockaddid <= 0xFF);
 +            /* check what is possible to write in the reserved space, in priority order */
 +            for (int i = 0; i < track->itu_t_t35_count; i++) {
-+                block_type_t35_count += mkv_simulate_blockadditional_header(s, &remaining_video_track_space, MATROSKA_BLOCK_ADD_ID_TYPE_ITU_T_T35, MATROSKA_BLOCK_ADD_ID_TYPE_ITU_T_T35);
++                block_type_t35_count += mkv_simulate_blockadditional_header(s, &remaining_video_track_space, MATROSKA_BLOCK_ADD_ID_TYPE_ITU_T_T35, MATROSKA_BLOCK_ADD_ID_ITU_T_T35);
 +            }
 +            if (remaining_video_track_space >= max_block_add_id_size && remaining_video_track_space != max_block_add_id_size + 1) { /* min element full size is 2 so 1 byte is not something which can be let alone */
 +                max_block_add_id_count++;
@@ -159,7 +175,7 @@ index 796d73c3cc..288ad5a876 100644
              }
          }
  
-@@ -3671,6 +3707,7 @@ static const AVCodecTag additional_subtitle_tags[] = {
+@@ -3710,6 +3748,7 @@ static const AVCodecTag additional_subtitle_tags[] = {
  #define FLAGS AV_OPT_FLAG_ENCODING_PARAM
  static const AVOption options[] = {
      { "reserve_index_space", "reserve a given amount of space (in bytes) at the beginning of the file for the index (cues)", OFFSET(reserve_cues_space), AV_OPT_TYPE_INT,   { .i64 = 0 },   0, INT_MAX,   FLAGS },
@@ -167,6 +183,3 @@ index 796d73c3cc..288ad5a876 100644
      { "cues_to_front", "move Cues (the index) to the front by shifting data if necessary", OFFSET(move_cues_to_front), AV_OPT_TYPE_BOOL, { .i64 = 0}, 0, 1, FLAGS },
      { "cluster_size_limit",  "store at most the provided amount of bytes in a cluster",                                     OFFSET(cluster_size_limit), AV_OPT_TYPE_INT  , { .i64 = -1 }, -1, INT_MAX,   FLAGS },
      { "cluster_time_limit",  "store at most the provided number of milliseconds in a cluster",                               OFFSET(cluster_time_limit), AV_OPT_TYPE_INT64, { .i64 = -1 }, -1, INT64_MAX, FLAGS },
--- 
-2.52.0
-

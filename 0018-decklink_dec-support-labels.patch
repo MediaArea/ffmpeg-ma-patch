@@ -1,71 +1,89 @@
-From 5b1972d6c1e0e6bf4da7f4ca77126d1a048cafb3 Mon Sep 17 00:00:00 2001
+From 3d878051341f2142d6c83bd01edaf2c37e694d38 Mon Sep 17 00:00:00 2001
 From: Jerome Martinez <jerome@mediaarea.net>
 Date: Thu, 4 Dec 2025 17:31:32 +0100
 Subject: [PATCH 19/19] decklink_dec: support labels
 
 ---
- fftools/ffprobe.c            |  27 +++++++--
- libavdevice/decklink_dec.cpp |  75 +++++++++++------------
- libavformat/avformat.c       |  81 +++++++++++++++++++++++++
- libavformat/avformat.h       |  25 ++++++++
- libavformat/dump.c           |  45 +++++++++++---
- libavformat/matroska.h       |   1 +
- libavformat/matroskadec.c    |  80 +++++++++++++++++--------
- libavformat/matroskaenc.c    | 111 ++++++++++++++++++++++++++++++++---
- libavutil/timecode.h         |   2 +
- 9 files changed, 363 insertions(+), 84 deletions(-)
+ fftools/ffprobe.c                         |  49 ++++++--
+ libavdevice/decklink_dec.cpp              |  75 ++++++-------
+ libavformat/avformat.c                    |  81 ++++++++++++++
+ libavformat/avformat.h                    |  25 +++++
+ libavformat/dump.c                        |  58 ++++++++--
+ libavformat/matroska.h                    |   1 +
+ libavformat/matroskadec.c                 |  80 +++++++++-----
+ libavformat/matroskaenc.c                 | 129 +++++++++++++++++++---
+ tests/ref/fate/matroska-avoid-negative-ts |   4 +-
+ tests/ref/fate/matroska-ms-mode           |   4 +-
+ tests/ref/fate/matroska-qt-mode           |   4 +-
+ tests/ref/fate/rgb24-mkv                  |   4 +-
+ tests/ref/lavf/mkv                        |   4 +-
+ tests/ref/lavf/mkv_attachment             |   4 +-
+ tests/ref/seek/lavf-mkv                   |  44 ++++----
+ 15 files changed, 440 insertions(+), 126 deletions(-)
 
 diff --git a/fftools/ffprobe.c b/fftools/ffprobe.c
-index 538c82b9d4..bbf2d8149d 100644
+index a3fa46f..73f13ef 100644
 --- a/fftools/ffprobe.c
 +++ b/fftools/ffprobe.c
-@@ -1166,6 +1166,7 @@ static void print_pkt_side_data(AVTextFormatContext *tfc,
-     av_assert0(container < FF_ARRAY_ELEMS(section_header));
- 
-     avtext_print_section_header(tfc, sd, section_header[container]);
-+    av_log(NULL, AV_LOG_ERROR, "%s \n", name ? name : "unknown");
-     print_str("side_data_type", name ? name : "unknown");
-     if (sd->type == AV_PKT_DATA_DISPLAYMATRIX && sd->size >= 9*4) {
-         print_displaymatrix(tfc, (const int32_t*)sd->data);
-@@ -1540,14 +1541,32 @@ static void print_frame_side_data(AVTextFormatContext *tfc,
+@@ -1569,15 +1569,48 @@ static void print_frame_side_data(AVTextFormatContext *tfc,
              av_timecode_make_mpeg_tc_string(tcbuf, *(int64_t *)(sd->data));
              print_str("timecode", tcbuf);
          } else if (sd->type == AV_FRAME_DATA_S12M_TIMECODE && sd->size >= 8) {
 -            uint64_t *tc = (uint64_t*)sd->data;
 -            int m = FFMIN(tc[0],3);
-+            uint8_t *sd_count = (uint8_t*) (sd->data + 4);
-+            uint8_t count = *sd_count;
++            uint32_t stored_size = 0;
++            memcpy(&stored_size, sd->data, sizeof(stored_size));
              avtext_print_section_header(tfc, NULL, SECTION_ID_FRAME_SIDE_DATA_TIMECODE_LIST);
 -            for (int j = 1; j <= m ; j++) {
-+            for (int j = 0; j < count ; j++) {
-+                uint8_t *sd_base = sd->data + 8 + (8 + 4 + 16) * j;
-+                uint64_t *sd_tc = (uint64_t*)sd_base;
-+                uint32_t *sd_id = (uint32_t*)(sd_base + 8);
-+                char* sd_title = (char*)(sd_base + 8 + 4);
-                 char tcbuf[AV_TIMECODE_STR_SIZE];
+-                char tcbuf[AV_TIMECODE_STR_SIZE];
 -                av_timecode_make_smpte_tc_string2(tcbuf, stream->avg_frame_rate, tc[j], 0, 0);
-+                uint64_t id = *sd_id;
-+                uint64_t tc = *sd_tc;
-+                av_timecode_make_smpte_tc_string2(tcbuf, stream->avg_frame_rate, av_timecode_parse_from_64bit(tc), 0, 0);
-                 avtext_print_section_header(tfc, NULL, SECTION_ID_FRAME_SIDE_DATA_TIMECODE);
-                 print_str("value", tcbuf);
-+                print_int("id", id);
-+                char tctitlebuf[17];
-+                int k = 0;
-+                for (; k < 16; k++)
-+                    if (!sd_title[k])
-+                        break;
-+                if (k >= 16) {
-+                    memcpy(tctitlebuf, sd_title, k);
-+                    tctitlebuf[k] = '\0';
-+                    sd_title = tctitlebuf;
+-                avtext_print_section_header(tfc, NULL, SECTION_ID_FRAME_SIDE_DATA_TIMECODE);
+-                print_str("value", tcbuf);
+-                avtext_print_section_footer(tfc);
++            if (stored_size == sd->size && sd->data[5] >= 28) {
++                uint8_t count = sd->data[4];
++                uint8_t item_size = sd->data[5];
++                count = FFMIN(count, (sd->size - 8) / item_size);
++                for (int j = 0; j < count; j++) {
++                    uint8_t *sd_base = sd->data + 8 + item_size * j;
++                    uint64_t *sd_tc = (uint64_t*)sd_base;
++                    uint32_t *sd_id = (uint32_t*)(sd_base + 8);
++                    char* sd_title = (char*)(sd_base + 12);
++                    char tcbuf[AV_TIMECODE_STR_SIZE];
++                    uint64_t id = *sd_id;
++                    uint64_t tc = *sd_tc;
++                    av_timecode_make_smpte_tc_string2(tcbuf, stream->avg_frame_rate, av_timecode_parse_from_64bit(tc), 0, 0);
++                    avtext_print_section_header(tfc, NULL, SECTION_ID_FRAME_SIDE_DATA_TIMECODE);
++                    print_str("value", tcbuf);
++                    print_int("id", id);
++                    char tctitlebuf[17];
++                    int k = 0;
++                    for (; k < 16; k++)
++                        if (!sd_title[k])
++                            break;
++                    if (k >= 16) {
++                        memcpy(tctitlebuf, sd_title, k);
++                        tctitlebuf[k] = '\0';
++                        sd_title = tctitlebuf;
++                    }
++                    print_str("title", sd_title);
++                    avtext_print_section_footer(tfc);
 +                }
-+                print_str("title", sd_title);
-                 avtext_print_section_footer(tfc);
++            } else if (sd->size >= sizeof(uint32_t) * 4) {
++                uint32_t *tc = (uint32_t*)sd->data;
++                int count = FFMIN(tc[0], 3);
++                for (int j = 1; j <= count; j++) {
++                    char tcbuf[AV_TIMECODE_STR_SIZE];
++                    av_timecode_make_smpte_tc_string2(tcbuf, stream->avg_frame_rate, tc[j], 0, 0);
++                    avtext_print_section_header(tfc, NULL, SECTION_ID_FRAME_SIDE_DATA_TIMECODE);
++                    print_str("value", tcbuf);
++                    avtext_print_section_footer(tfc);
++                }
              }
              avtext_print_section_footer(tfc);
+         } else if (sd->type == AV_FRAME_DATA_MASTERING_DISPLAY_METADATA) {
 diff --git a/libavdevice/decklink_dec.cpp b/libavdevice/decklink_dec.cpp
-index 98b64c36d7..6303c701fd 100644
+index 98b64c3..6303c70 100644
 --- a/libavdevice/decklink_dec.cpp
 +++ b/libavdevice/decklink_dec.cpp
 @@ -712,7 +712,24 @@ static int64_t get_pkt_pts(IDeckLinkVideoInputFrame_v14_2_1 *videoFrame,
@@ -198,10 +216,10 @@ index 98b64c36d7..6303c701fd 100644
                          }
  
 diff --git a/libavformat/avformat.c b/libavformat/avformat.c
-index 17c0534de2..478e1df3af 100644
+index aca8c48..71102b9 100644
 --- a/libavformat/avformat.c
 +++ b/libavformat/avformat.c
-@@ -988,3 +988,84 @@ int ff_format_io_close(AVFormatContext *s, AVIOContext **pb)
+@@ -997,3 +997,84 @@ int ff_format_io_close(AVFormatContext *s, AVIOContext **pb)
      *pb = NULL;
      return ret;
  }
@@ -254,7 +272,7 @@ index 17c0534de2..478e1df3af 100644
 +    if (title_size)
 +        memcpy(sd_title, title, title_size);
 +    memset(sd_title + title_size, 0, 16 - title_size);
-+    
++
 +    return 0;
 +}
 +
@@ -286,12 +304,11 @@ index 17c0534de2..478e1df3af 100644
 +    }
 +    return av_packet_add_s12m_timecode_to_side_data_internal(ctx, sd->data, sd->size, flags, tc, id, title);
 +}
-\ No newline at end of file
 diff --git a/libavformat/avformat.h b/libavformat/avformat.h
-index fc46ae6b8d..267b172e7f 100644
+index 6768627..8afe2b9 100644
 --- a/libavformat/avformat.h
 +++ b/libavformat/avformat.h
-@@ -3163,6 +3163,31 @@ void av_dump_format(AVFormatContext *ic,
+@@ -3200,6 +3200,31 @@ void av_dump_format(AVFormatContext *ic,
                      const char *url,
                      int is_output);
  
@@ -324,10 +341,10 @@ index fc46ae6b8d..267b172e7f 100644
  #define AV_FRAME_FILENAME_FLAGS_MULTIPLE          1  ///< Allow multiple %d
  #define AV_FRAME_FILENAME_FLAGS_IGNORE_TRUNCATION 2  ///< Ignore truncated output instead of returning an error
 diff --git a/libavformat/dump.c b/libavformat/dump.c
-index c2f9fc6f7b..56b13a2371 100644
+index 6bd6b34..dc2c3b7 100644
 --- a/libavformat/dump.c
 +++ b/libavformat/dump.c
-@@ -428,19 +428,46 @@ static void dump_dovi_conf(void *ctx, const AVPacketSideData *sd,
+@@ -428,19 +428,59 @@ static void dump_dovi_conf(void *ctx, const AVPacketSideData *sd,
  }
  
  static void dump_s12m_timecode(void *ctx, AVRational avg_frame_rate, const AVPacketSideData *sd,
@@ -341,48 +358,61 @@ index c2f9fc6f7b..56b13a2371 100644
          av_log(ctx, AV_LOG_ERROR, "invalid data\n");
          return;
      }
--
+ 
 -    for (int j = 1; j <= tc[0]; j++) {
-+  
-+    uint8_t *sd_count = (uint8_t*) (sd->data + 4);
-+    uint8_t count = *sd_count;
-+    for (int j = 0; j < count ; j++) {
-+        uint8_t *sd_base = sd->data + 8 + (8 + 4 + 16) * j;
-+        uint64_t *sd_tc = (uint64_t*)sd_base;
-+        uint32_t *sd_id = (uint32_t*)(sd_base + 8);
-+        char* sd_title = (char*)(sd_base + 8 + 4);
-         char tcbuf[AV_TIMECODE_STR_SIZE];
+-        char tcbuf[AV_TIMECODE_STR_SIZE];
 -        av_timecode_make_smpte_tc_string2(tcbuf, avg_frame_rate, tc[j], 0, 0);
 -        av_log(ctx, log_level, "timecode - %s%s", tcbuf, j != tc[0] ? ", " : "");
-+        uint64_t id = *sd_id;
-+        uint64_t tc = *sd_tc;
-+        av_timecode_make_smpte_tc_string2(tcbuf, avg_frame_rate, av_timecode_parse_from_64bit(tc), 0, 0);
-+        char tctitlebuf[17];
-+        int k = 0;
-+        for (; k < 16; k++)
-+            if (!sd_title[k])
-+                break;
-+        if (k >= 16) {
-+            memcpy(tctitlebuf, sd_title, k);
-+            tctitlebuf[k] = '\0';
-+            sd_title = tctitlebuf;
++    uint32_t stored_size = 0;
++    memcpy(&stored_size, sd->data, sizeof(stored_size));
++    if (sd->size >= 8 && stored_size == sd->size && sd->data[5] >= 28) {
++        uint8_t count = sd->data[4];
++        uint8_t item_size = sd->data[5];
++        count = FFMIN(count, (sd->size - 8) / item_size);
++        for (int j = 0; j < count; j++) {
++            uint8_t *sd_base = sd->data + 8 + item_size * j;
++            uint64_t *sd_tc = (uint64_t*)sd_base;
++            uint32_t *sd_id = (uint32_t*)(sd_base + 8);
++            char* sd_title = (char*)(sd_base + 12);
++            char tcbuf[AV_TIMECODE_STR_SIZE];
++            uint64_t id = *sd_id;
++            uint64_t tc = *sd_tc;
++            av_timecode_make_smpte_tc_string2(tcbuf, avg_frame_rate, av_timecode_parse_from_64bit(tc), 0, 0);
++            char tctitlebuf[17];
++            int k = 0;
++            for (; k < 16; k++)
++                if (!sd_title[k])
++                    break;
++            if (k >= 16) {
++                memcpy(tctitlebuf, sd_title, k);
++                tctitlebuf[k] = '\0';
++                sd_title = tctitlebuf;
++            }
++            if (j) {
++                const char *name = av_packet_side_data_name(AV_PKT_DATA_S12M_TIMECODE);
++                av_log(ctx, log_level, "\n%s  %s: ", indent, name ? name : "");
++            }
++            char id_string[33];
++            if (id) {
++                snprintf(id_string, sizeof(id_string), "%" PRIu64, id);
++            }
++            else {
++                id_string[0] = '\0';
++            }
++            av_log(ctx, log_level, "%s%s%s%s%s", id ? "id: " : "", id_string, *sd_title && id ? " " : "", *sd_title ? "title: " : "", *sd_title ? sd_title : "");
 +        }
-+        if (j) {
-+            const char *name = av_packet_side_data_name(AV_PKT_DATA_S12M_TIMECODE);
-+            av_log(ctx, log_level, "\n%s  %s: ", indent, name ? name : "");
++    } else if (sd->size >= sizeof(uint32_t) * 4) {
++        const uint32_t *tc = (const uint32_t *)sd->data;
++        int count = FFMIN(tc[0], 3);
++        for (int j = 1; j <= count; j++) {
++            char tcbuf[AV_TIMECODE_STR_SIZE];
++            av_timecode_make_smpte_tc_string2(tcbuf, avg_frame_rate, tc[j], 0, 0);
++            av_log(ctx, log_level, "timecode - %s%s", tcbuf, j != count ? ", " : "");
 +        }
-+        char id_string[33];
-+        if (id) {
-+            snprintf(id_string, sizeof(id_string), "%" PRIu64, id);
-+        }
-+        else {
-+            id_string[0] = '\0';
-+        }
-+        av_log(ctx, log_level, "%s%s%s%s%s", id ? "id: " : "", id_string, *sd_title && id ? " " : "", *sd_title ? "title: " : "", *sd_title ? sd_title : "");
      }
  }
  
-@@ -549,7 +576,7 @@ static void dump_sidedata(void *ctx, const AVPacketSideData *side_data, int nb_s
+@@ -549,7 +589,7 @@ static void dump_sidedata(void *ctx, const AVPacketSideData *side_data, int nb_s
              dump_dovi_conf(ctx, sd, log_level);
              break;
          case AV_PKT_DATA_S12M_TIMECODE:
@@ -392,7 +422,7 @@ index c2f9fc6f7b..56b13a2371 100644
          case AV_PKT_DATA_AMBIENT_VIEWING_ENVIRONMENT:
              dump_ambient_viewing_environment_metadata(ctx, sd, log_level);
 diff --git a/libavformat/matroska.h b/libavformat/matroska.h
-index 7d22093672..02d851697d 100644
+index 7d22093..02d8516 100644
 --- a/libavformat/matroska.h
 +++ b/libavformat/matroska.h
 @@ -223,6 +223,7 @@
@@ -404,7 +434,7 @@ index 7d22093672..02d851697d 100644
  /* IDs in the seekhead master */
  #define MATROSKA_ID_SEEKENTRY  0x4DBB
 diff --git a/libavformat/matroskadec.c b/libavformat/matroskadec.c
-index 1113fdf4e1..bec6052893 100644
+index 8dc7eb3..06bdd8d 100644
 --- a/libavformat/matroskadec.c
 +++ b/libavformat/matroskadec.c
 @@ -50,6 +50,7 @@
@@ -415,7 +445,7 @@ index 1113fdf4e1..bec6052893 100644
  #include "libavutil/spherical.h"
  
  #include "libavcodec/bytestream.h"
-@@ -260,6 +261,7 @@ typedef struct MatroskaBlockAdditionMapping {
+@@ -261,6 +262,7 @@ typedef struct MatroskaBlockAdditionMapping {
      char *name;
      uint64_t type;
      EbmlBin extradata;
@@ -423,7 +453,7 @@ index 1113fdf4e1..bec6052893 100644
  } MatroskaBlockAdditionMapping;
  
  typedef struct MatroskaTrack {
-@@ -342,6 +344,7 @@ typedef struct MatroskaTagTarget {
+@@ -360,6 +362,7 @@ typedef struct MatroskaTagTarget {
      uint64_t trackuid;
      uint64_t chapteruid;
      uint64_t attachuid;
@@ -431,7 +461,7 @@ index 1113fdf4e1..bec6052893 100644
  } MatroskaTagTarget;
  
  typedef struct MatroskaTags {
-@@ -450,7 +453,7 @@ typedef struct MatroskaDemuxContext {
+@@ -471,7 +474,7 @@ typedef struct MatroskaDemuxContext {
  // Removing the sizes breaks MSVC.
  static EbmlSyntax ebml_syntax[3], matroska_segment[9], matroska_track_video_color[15], matroska_track_video[19],
                    matroska_track[33], matroska_track_encoding[6], matroska_track_encodings[2],
@@ -440,7 +470,7 @@ index 1113fdf4e1..bec6052893 100644
                    matroska_attachments[2], matroska_chapter_entry[9], matroska_chapter[6], matroska_chapters[2],
                    matroska_index_entry[3], matroska_index[2], matroska_tag[3], matroska_tags[2], matroska_seekhead[2],
                    matroska_blockadditions[2], matroska_blockgroup[8], matroska_cluster_parsing[8];
-@@ -605,6 +608,7 @@ static EbmlSyntax matroska_block_addition_mapping[] = {
+@@ -626,6 +629,7 @@ static EbmlSyntax matroska_block_addition_mapping[] = {
      { MATROSKA_ID_BLKADDIDNAME,       EBML_STR,  0, 0, offsetof(MatroskaBlockAdditionMapping, name) },
      { MATROSKA_ID_BLKADDIDTYPE,       EBML_UINT, 0, 0, offsetof(MatroskaBlockAdditionMapping, type), { .u = MATROSKA_BLOCK_ADD_ID_TYPE_DEFAULT } },
      { MATROSKA_ID_BLKADDIDEXTRADATA,  EBML_BIN,  0, 0, offsetof(MatroskaBlockAdditionMapping, extradata) },
@@ -448,7 +478,7 @@ index 1113fdf4e1..bec6052893 100644
      CHILD_OF(matroska_track)
  };
  
-@@ -732,6 +736,7 @@ static EbmlSyntax matroska_tagtargets[] = {
+@@ -753,6 +757,7 @@ static EbmlSyntax matroska_tagtargets[] = {
      { MATROSKA_ID_TAGTARGETS_TRACKUID,   EBML_UINT, 0, 0, offsetof(MatroskaTagTarget, trackuid),   { .u = 0 } },
      { MATROSKA_ID_TAGTARGETS_CHAPTERUID, EBML_UINT, 0, 0, offsetof(MatroskaTagTarget, chapteruid), { .u = 0 } },
      { MATROSKA_ID_TAGTARGETS_ATTACHUID,  EBML_UINT, 0, 0, offsetof(MatroskaTagTarget, attachuid),  { .u = 0 } },
@@ -456,7 +486,7 @@ index 1113fdf4e1..bec6052893 100644
      CHILD_OF(matroska_tag)
  };
  
-@@ -1855,6 +1860,35 @@ static void matroska_convert_tag(AVFormatContext *s, EbmlList *list,
+@@ -1876,6 +1881,35 @@ static void matroska_convert_tag(AVFormatContext *s, EbmlList *list,
      ff_metadata_conv(metadata, NULL, ff_mkv_metadata_conv);
  }
  
@@ -470,7 +500,7 @@ index 1113fdf4e1..bec6052893 100644
 +    for (i = 0; i < list->nb_elem; i++) {
 +        const char *lang = tags[i].lang &&
 +                           strcmp(tags[i].lang, "und") ? tags[i].lang : NULL;
-+                           
++
 +        if (lang)
 +            continue; // Only the default one
 +
@@ -492,7 +522,7 @@ index 1113fdf4e1..bec6052893 100644
  static void matroska_convert_tags(AVFormatContext *s)
  {
      MatroskaDemuxContext *matroska = s->priv_data;
-@@ -1902,7 +1936,12 @@ static void matroska_convert_tags(AVFormatContext *s)
+@@ -1923,7 +1957,12 @@ static void matroska_convert_tags(AVFormatContext *s)
              for (j = 0; j < matroska->tracks.nb_elem; j++) {
                  if (track[j].uid == tags[i].target.trackuid &&
                      track[j].stream) {
@@ -501,12 +531,12 @@ index 1113fdf4e1..bec6052893 100644
 +                        matroska_convert_blockaddid_tag(s, &tags[i].tag,
 +                                         &track->block_addition_mappings, tags[i].target.blockaddid);
 +                    }
-+                    else 
++                    else
 +                        matroska_convert_tag(s, &tags[i].tag,
                                           &track[j].stream->metadata, NULL);
                      found = 1;
                 }
-@@ -3434,6 +3473,18 @@ static int matroska_parse_dovi_streams(AVFormatContext *s)
+@@ -3574,6 +3613,18 @@ static int matroska_parse_dovi_streams(AVFormatContext *s)
      stg->params.layered_video->width = bl_st->codecpar->width;
      stg->params.layered_video->height = bl_st->codecpar->height;
  
@@ -525,7 +555,7 @@ index 1113fdf4e1..bec6052893 100644
      return 0;
  }
  
-@@ -4161,29 +4212,8 @@ static int matroska_parse_block_additional(MatroskaDemuxContext *matroska,
+@@ -4302,29 +4353,8 @@ static int matroska_parse_block_additional(MatroskaDemuxContext *matroska,
              break;
          }
  
@@ -553,12 +583,12 @@ index 1113fdf4e1..bec6052893 100644
 -        
 -        return 0;
 +        uint64_t tc = AV_RB64(data);
-+        return av_packet_add_s12m_timecode_to_side_data(matroska->ctx, pkt, S12M_TIMECODE_FLAG_ID_PRESENT | S12M_TIMECODE_FLAG_TITLE_PRESENT, tc, id, mapping->title);
++        return av_packet_add_s12m_timecode_to_side_data(matroska->ctx, pkt, S12M_TIMECODE_FLAG_ID_PRESENT | S12M_TIMECODE_FLAG_TITLE_PRESENT, tc, mapping->value, mapping->title);
      }
      default:
          side_data = av_packet_new_side_data(pkt, AV_PKT_DATA_MATROSKA_BLOCKADDITIONAL,
 diff --git a/libavformat/matroskaenc.c b/libavformat/matroskaenc.c
-index f4dd475c96..cc5596dc10 100644
+index 7c15026..00bedaf 100644
 --- a/libavformat/matroskaenc.c
 +++ b/libavformat/matroskaenc.c
 @@ -203,9 +203,11 @@ typedef struct mkv_track {
@@ -573,7 +603,7 @@ index f4dd475c96..cc5596dc10 100644
      int64_t         blockadditionmapping_offset;
      int             codecpriv_offset;
      unsigned        codecpriv_size;     ///< size reserved for CodecPrivate excluding header+length field
-@@ -3544,6 +3546,46 @@ static int mkv_write_tags(AVFormatContext *s)
+@@ -3524,6 +3526,46 @@ static int mkv_write_tags(AVFormatContext *s)
              return ret;
          if (seekable)
              track->duration_offset = avio_tell(mkv->tags.bc) - DURATION_SIMPLETAG_SIZE;
@@ -588,12 +618,12 @@ index f4dd475c96..cc5596dc10 100644
 +            put_ebml_uid(pb, MATROSKA_ID_TAGTARGETS_TRACKUID, track->uid);
 +            put_ebml_uint(pb, MATROSKA_ID_TAGTARGETS_BLOCKADDID, 101);
 +            end_ebml_master(pb, targets);
-+            
++
 +            targets = start_ebml_master(pb, MATROSKA_ID_SIMPLETAG, 4 + 1 + 8);
 +            put_ebml_string(pb, MATROSKA_ID_TAGNAME, "VITC");
 +            end_ebml_master(pb, targets);
 +
-+            
++
 +
 +            uint8_t *buf;
 +            int ret = 0, size, tag_written = 0;
@@ -620,53 +650,78 @@ index f4dd475c96..cc5596dc10 100644
      }
  
      if (mkv->nb_attachments && !IS_WEBM(mkv)) {
-@@ -4212,12 +4254,16 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
+@@ -4212,29 +4254,57 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
      uint64_t count = 0;
      if (par->codec_type == AVMEDIA_TYPE_VIDEO) {
          side_data = av_packet_get_side_data(pkt, AV_PKT_DATA_S12M_TIMECODE, &side_data_size);
 -        if (side_data && side_data_size >= sizeof(uint64_t)) {
--            uint64_t *side_data_64 = (uint64_t*)side_data;
+-            uint64_t *side_data_64 = (uint64_t *)side_data;
 -            count = side_data_64[0];
--            if (side_data_size / sizeof(uint64_t) - 1 >= count ) {
+-            if (side_data_size / sizeof(uint64_t) - 1 >= count) {
+-                uint64_t written_count = count;
+-                side_data_64++;
+-                if (count > MAX_MATROSKA_BLOCK_ADD_SMPTE_12M) {
+-                    if (count > track->timecode_count) {
+-                        av_log(logctx, AV_LOG_WARNING, "Too many SMPTE timecode streams in side data, discarding %"PRIu64" timecode streams.\n", count - MAX_MATROSKA_BLOCK_ADD_SMPTE_12M);
 +        if (side_data && side_data_size >= 8) {
-+
 +            // header: 0-3 allocated size; 4 count; 5 byte size per item; 6 flags; 7 reserved
 +            // flags: 0 id present; 1 title present
 +            // content: 8 bytes tc; 4 bytes id; 16 bytes 0 terminated or 16 bytes UTF8 title
 +
-+            uint8_t count = *(side_data + 4);
-+            uint8_t item_size = *(side_data + 5);
-+            if (item_size && (side_data_size - 8) / item_size >= count ) {
-                 uint64_t written_count = count;
--                side_data_64++;
-                 if (count > MAX_MATROSKA_BLOCK_ADD_SMPTE_12M) {
-                     if (count > track->timecode_count) {
-                         av_log(logctx, AV_LOG_WARNING, "Too many SMPTE timecode streams in side data, discarding %"PRIu64" timecode streams.\n", count - MAX_MATROSKA_BLOCK_ADD_SMPTE_12M);
-@@ -4225,10 +4271,15 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
++            uint32_t stored_size = 0;
++            memcpy(&stored_size, side_data, sizeof(stored_size));
++            if (stored_size == side_data_size && side_data[5] >= 28) {
++                uint8_t side_data_count = side_data[4];
++                uint8_t item_size = side_data[5];
++                count = side_data_count;
++                uint64_t written_count = side_data_count;
++                if (side_data_count > MAX_MATROSKA_BLOCK_ADD_SMPTE_12M) {
++                    if (side_data_count > track->timecode_count) {
++                        av_log(logctx, AV_LOG_WARNING, "Too many SMPTE timecode streams in side data, discarding %"PRIu64" timecode streams.\n", (uint64_t)side_data_count - MAX_MATROSKA_BLOCK_ADD_SMPTE_12M);
+                     }
                      written_count = MAX_MATROSKA_BLOCK_ADD_SMPTE_12M;
                  }
-                 for (uint64_t i = 0; i < written_count; i++) {
--                    uint64_t tc = side_data_64[i];
++                written_count = FFMIN(written_count, (side_data_size - 8) / item_size);
++                for (uint64_t i = 0; i < written_count; i++) {
 +                    uint8_t *sd_base = side_data + 8 + item_size * i;
 +                    uint64_t *sd_tc = (uint64_t*)sd_base;
-+                    uint32_t *sd_id = (uint32_t*)(sd_base + 8);
 +                    char* sd_title = (char*)(sd_base + 8 + 4);
++                    uint8_t *payload = timecode_buf[i];
++                    AV_WB64(payload, *sd_tc);
++                    memcpy(track->timecode_label[i], sd_title, 16);
++
++                    av_log(logctx, AV_LOG_DEBUG, "Writing SMPTE timecode from side data, pos %"PRIu64", to BlockAdditional: 0x%016lX (RFC 5484)\n", i + 1, *sd_tc);
++
++                    int blockaddid = MATROSKA_BLOCK_ADD_ID_SMPTE_12M + i;
++                    mkv_write_blockadditional(&writer, payload, 8, blockaddid);
++                    track->max_blockaddid = FFMAX(track->max_blockaddid, blockaddid);
++                }
++                track->timecode_count = FFMAX(track->timecode_count, side_data_count);
++            } else if (side_data_size >= sizeof(uint32_t) * 4) {
++                const uint32_t *tc = (const uint32_t *)side_data;
++                uint64_t side_data_count = FFMIN(tc[0], (side_data_size / sizeof(uint32_t)) - 1);
++                uint64_t written_count = FFMIN(side_data_count, MAX_MATROSKA_BLOCK_ADD_SMPTE_12M);
++                count = side_data_count;
++
+                 for (uint64_t i = 0; i < written_count; i++) {
+-                    uint64_t tc = side_data_64[i];
                      uint8_t *payload = timecode_buf[i];
 -                    AV_WB64(payload, tc);
 -                    av_log(logctx, AV_LOG_DEBUG, "Writing SMPTE timecode from side data, pos %"PRIu64", to BlockAdditional: 0x%016lX (RFC 5484)\n", i + 1, tc);
-+                    AV_WB64(payload, *sd_tc);
-+                    memcpy(track->timecode_label[i], sd_title, 16);
-+                    
-+                    av_log(logctx, AV_LOG_DEBUG, "Writing SMPTE timecode from side data, pos %"PRIu64", to BlockAdditional: 0x%016lX (RFC 5484)\n", i + 1, *sd_tc);
++                    uint64_t tc64 = av_timecode_expand_to_64bit(tc[i + 1]);
++                    AV_WB64(payload, tc64);
++                    memset(track->timecode_label[i], 0, sizeof(track->timecode_label[i]));
  
                      int blockaddid = MATROSKA_BLOCK_ADD_ID_SMPTE_12M + i;
                      mkv_write_blockadditional(&writer, payload, 8, blockaddid);
-@@ -4706,10 +4757,52 @@ after_cues:
+                     track->max_blockaddid = FFMAX(track->max_blockaddid, blockaddid);
+                 }
+-                track->timecode_count = FFMAX(track->timecode_count, count);
++                track->timecode_count = FFMAX(track->timecode_count, side_data_count);
              }
-             for (int i = 0; i < block_type_timecode_count; i++) {
-                 mkv_write_blockadditional_header(s, MATROSKA_BLOCK_ADD_ID_TYPE_SMPTE_12M, MATROSKA_BLOCK_ADD_ID_SMPTE_12M + i);
--           }
-+            }
+         }
+     }
+@@ -4717,6 +4787,39 @@ after_cues:
              if (remaining_video_track_space > 1) {
                  put_ebml_void(track_bc, remaining_video_track_space);
              }
@@ -693,19 +748,10 @@ index f4dd475c96..cc5596dc10 100644
 +                end_ebml_master(pb, targets);
 +
 +                uint8_t *buf;
-+                int ret = 0, size, tag_written = 0;
-+
 +                AVIOContext *const tmp_bc = pb;
-+                size = avio_get_dyn_buf(tmp_bc, &buf);
-+                if (tmp_bc->error) {
-+                    ret = tmp_bc->error;
-+                    //goto end;
-+                }
-+                if (!pb) {
-+                    ret = start_ebml_master_crc32(&pb, mkv);
-+                    //if (ret < 0)
-+                        //goto end;
-+                }
++                int size = avio_get_dyn_buf(tmp_bc, &buf);
++                if (tmp_bc->error)
++                    return tmp_bc->error;
 +                ffio_reset_dyn_buf(pb);
 +
 +                put_ebml_binary(mkv->tags.bc, MATROSKA_ID_TAG, buf, size);
@@ -715,19 +761,146 @@ index f4dd475c96..cc5596dc10 100644
          }
  
          avio_seek(pb, mkv->track.pos, SEEK_SET);
-diff --git a/libavutil/timecode.h b/libavutil/timecode.h
-index 81713a9adf..6c4af1afdc 100644
---- a/libavutil/timecode.h
-+++ b/libavutil/timecode.h
-@@ -28,6 +28,8 @@
- #define AVUTIL_TIMECODE_H
- 
- #include <stdint.h>
-+#include "libavformat/avformat.h"
-+#include "libavcodec/packet.h"
- #include "rational.h"
- 
- #define AV_TIMECODE_STR_SIZE 23
--- 
-2.46.0.windows.1
-
+diff --git a/tests/ref/fate/matroska-avoid-negative-ts b/tests/ref/fate/matroska-avoid-negative-ts
+index c13563b..d575da4 100644
+--- a/tests/ref/fate/matroska-avoid-negative-ts
++++ b/tests/ref/fate/matroska-avoid-negative-ts
+@@ -1,5 +1,5 @@
+-40794fcce2e6a2e638ed8ab9c21fdaa5 *tests/data/fate/matroska-avoid-negative-ts.matroska
+-973894 tests/data/fate/matroska-avoid-negative-ts.matroska
++74a6cf75f7f228effaba693599dd4ec0 *tests/data/fate/matroska-avoid-negative-ts.matroska
++974151 tests/data/fate/matroska-avoid-negative-ts.matroska
+ #extradata 0:       22, 0x2885037c
+ #tb 0: 1/100000
+ #media_type 0: video
+diff --git a/tests/ref/fate/matroska-ms-mode b/tests/ref/fate/matroska-ms-mode
+index 9fe812a..d3825a3 100644
+--- a/tests/ref/fate/matroska-ms-mode
++++ b/tests/ref/fate/matroska-ms-mode
+@@ -1,5 +1,5 @@
+-d9503757e1091bf53678508329cea69e *tests/data/fate/matroska-ms-mode.matroska
+-413354 tests/data/fate/matroska-ms-mode.matroska
++be58dcc71962cb7f5534da4e39a4cf8a *tests/data/fate/matroska-ms-mode.matroska
++413611 tests/data/fate/matroska-ms-mode.matroska
+ #extradata 0:       40, 0x54290c93
+ #extradata 1:      114, 0xb6c80771
+ #tb 0: 1/100000
+diff --git a/tests/ref/fate/matroska-qt-mode b/tests/ref/fate/matroska-qt-mode
+index d8e881c..0770b51 100644
+--- a/tests/ref/fate/matroska-qt-mode
++++ b/tests/ref/fate/matroska-qt-mode
+@@ -1,5 +1,5 @@
+-d5d91282cf5737583548de88690594ea *tests/data/fate/matroska-qt-mode.matroska
+-1885434 tests/data/fate/matroska-qt-mode.matroska
++d2f03ebf2648f1519219f0487f5c8991 *tests/data/fate/matroska-qt-mode.matroska
++1885690 tests/data/fate/matroska-qt-mode.matroska
+ #extradata 0:       90, 0x817d0185
+ #tb 0: 1/100000
+ #media_type 0: video
+diff --git a/tests/ref/fate/rgb24-mkv b/tests/ref/fate/rgb24-mkv
+index 3e999c8..540b883 100644
+--- a/tests/ref/fate/rgb24-mkv
++++ b/tests/ref/fate/rgb24-mkv
+@@ -1,5 +1,5 @@
+-78bf3f1023e1966339043336bea73b9b *tests/data/fate/rgb24-mkv.matroska
+-58290 tests/data/fate/rgb24-mkv.matroska
++9eb63ec59324514974102321b4471cea *tests/data/fate/rgb24-mkv.matroska
++58546 tests/data/fate/rgb24-mkv.matroska
+ #tb 0: 1/10
+ #media_type 0: video
+ #codec_id 0: rawvideo
+diff --git a/tests/ref/lavf/mkv b/tests/ref/lavf/mkv
+index aac9798..963e1f2 100644
+--- a/tests/ref/lavf/mkv
++++ b/tests/ref/lavf/mkv
+@@ -1,3 +1,3 @@
+-123cc611602ccb8042262df85ef3a4f4 *tests/data/lavf/lavf.mkv
+-320571 tests/data/lavf/lavf.mkv
++71f7c66c6004d06a3f84bca785b9e47e *tests/data/lavf/lavf.mkv
++320827 tests/data/lavf/lavf.mkv
+ tests/data/lavf/lavf.mkv CRC=0x5df3232f
+diff --git a/tests/ref/lavf/mkv_attachment b/tests/ref/lavf/mkv_attachment
+index 1b15130..446274c 100644
+--- a/tests/ref/lavf/mkv_attachment
++++ b/tests/ref/lavf/mkv_attachment
+@@ -1,3 +1,3 @@
+-9aa9aefe531e84e0834a8724abe88d23 *tests/data/lavf/lavf.mkv_attachment
+-472721 tests/data/lavf/lavf.mkv_attachment
++aa204b678ac717197519fc6b09fccfaa *tests/data/lavf/lavf.mkv_attachment
++472977 tests/data/lavf/lavf.mkv_attachment
+ tests/data/lavf/lavf.mkv_attachment CRC=0x5df3232f
+diff --git a/tests/ref/seek/lavf-mkv b/tests/ref/seek/lavf-mkv
+index 2bd0870..f5a2591 100644
+--- a/tests/ref/seek/lavf-mkv
++++ b/tests/ref/seek/lavf-mkv
+@@ -1,48 +1,48 @@
+-ret: 0         st: 1 flags:1 dts:-0.010910 pts:-0.010910 pos:    769 size:   208 skip:481 discard:0
++ret: 0         st: 1 flags:1 dts:-0.010910 pts:-0.010910 pos:   1025 size:   208 skip:481 discard:0
+ ret: 0         st:-1 flags:0  ts:-1.000000
+-ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:    985 size: 27837
++ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:   1241 size: 27837
+ ret: 0         st:-1 flags:1  ts: 1.894167
+-ret: 0         st: 0 flags:1 dts: 0.960000 pts: 0.960000 pos: 292437 size: 27834
++ret: 0         st: 0 flags:1 dts: 0.960000 pts: 0.960000 pos: 292693 size: 27834
+ ret: 0         st: 0 flags:0  ts: 0.788330
+-ret: 0         st: 0 flags:1 dts: 0.960000 pts: 0.960000 pos: 292437 size: 27834
++ret: 0         st: 0 flags:1 dts: 0.960000 pts: 0.960000 pos: 292693 size: 27834
+ ret: 0         st: 0 flags:1  ts:-0.317500
+-ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:    985 size: 27837
++ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:   1241 size: 27837
+ ret:-1         st: 1 flags:0  ts: 2.576670
+ ret: 0         st: 1 flags:1  ts: 1.470840
+-ret: 0         st: 1 flags:1 dts: 0.981750 pts: 0.981750 pos: 320281 size:   209 skip:0 discard:347
++ret: 0         st: 1 flags:1 dts: 0.981750 pts: 0.981750 pos: 320537 size:   209 skip:0 discard:347
+ ret: 0         st:-1 flags:0  ts: 0.365002
+-ret: 0         st: 0 flags:1 dts: 0.480000 pts: 0.480000 pos: 146970 size: 27925
++ret: 0         st: 0 flags:1 dts: 0.480000 pts: 0.480000 pos: 147226 size: 27925
+ ret: 0         st:-1 flags:1  ts:-0.740831
+-ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:    985 size: 27837
++ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:   1241 size: 27837
+ ret:-1         st: 0 flags:0  ts: 2.153340
+ ret: 0         st: 0 flags:1  ts: 1.047500
+-ret: 0         st: 0 flags:1 dts: 0.960000 pts: 0.960000 pos: 292437 size: 27834
++ret: 0         st: 0 flags:1 dts: 0.960000 pts: 0.960000 pos: 292693 size: 27834
+ ret: 0         st: 1 flags:0  ts:-0.058330
+-ret: 0         st: 1 flags:1 dts:-0.010910 pts:-0.010910 pos:    769 size:   208 skip:481 discard:0
++ret: 0         st: 1 flags:1 dts:-0.010910 pts:-0.010910 pos:   1025 size:   208 skip:481 discard:0
+ ret: 0         st: 1 flags:1  ts: 2.835840
+-ret: 0         st: 1 flags:1 dts: 0.981750 pts: 0.981750 pos: 320281 size:   209 skip:0 discard:347
++ret: 0         st: 1 flags:1 dts: 0.981750 pts: 0.981750 pos: 320537 size:   209 skip:0 discard:347
+ ret:-1         st:-1 flags:0  ts: 1.730004
+ ret: 0         st:-1 flags:1  ts: 0.624171
+-ret: 0         st: 0 flags:1 dts: 0.480000 pts: 0.480000 pos: 146970 size: 27925
++ret: 0         st: 0 flags:1 dts: 0.480000 pts: 0.480000 pos: 147226 size: 27925
+ ret: 0         st: 0 flags:0  ts:-0.481660
+-ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:    985 size: 27837
++ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:   1241 size: 27837
+ ret: 0         st: 0 flags:1  ts: 2.412510
+-ret: 0         st: 0 flags:1 dts: 0.960000 pts: 0.960000 pos: 292437 size: 27834
++ret: 0         st: 0 flags:1 dts: 0.960000 pts: 0.960000 pos: 292693 size: 27834
+ ret:-1         st: 1 flags:0  ts: 1.306670
+ ret: 0         st: 1 flags:1  ts: 0.200840
+-ret: 0         st: 1 flags:1 dts:-0.010910 pts:-0.010910 pos:    769 size:   208 skip:481 discard:0
++ret: 0         st: 1 flags:1 dts:-0.010910 pts:-0.010910 pos:   1025 size:   208 skip:481 discard:0
+ ret: 0         st:-1 flags:0  ts:-0.904994
+-ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:    985 size: 27837
++ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:   1241 size: 27837
+ ret: 0         st:-1 flags:1  ts: 1.989173
+-ret: 0         st: 0 flags:1 dts: 0.960000 pts: 0.960000 pos: 292437 size: 27834
++ret: 0         st: 0 flags:1 dts: 0.960000 pts: 0.960000 pos: 292693 size: 27834
+ ret: 0         st: 0 flags:0  ts: 0.883340
+-ret: 0         st: 0 flags:1 dts: 0.960000 pts: 0.960000 pos: 292437 size: 27834
++ret: 0         st: 0 flags:1 dts: 0.960000 pts: 0.960000 pos: 292693 size: 27834
+ ret: 0         st: 0 flags:1  ts:-0.222490
+-ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:    985 size: 27837
++ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:   1241 size: 27837
+ ret:-1         st: 1 flags:0  ts: 2.671670
+ ret: 0         st: 1 flags:1  ts: 1.565840
+-ret: 0         st: 1 flags:1 dts: 0.981750 pts: 0.981750 pos: 320281 size:   209 skip:0 discard:347
++ret: 0         st: 1 flags:1 dts: 0.981750 pts: 0.981750 pos: 320537 size:   209 skip:0 discard:347
+ ret: 0         st:-1 flags:0  ts: 0.460008
+-ret: 0         st: 0 flags:1 dts: 0.480000 pts: 0.480000 pos: 146970 size: 27925
++ret: 0         st: 0 flags:1 dts: 0.480000 pts: 0.480000 pos: 147226 size: 27925
+ ret: 0         st:-1 flags:1  ts:-0.645825
+-ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:    985 size: 27837
++ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:   1241 size: 27837
