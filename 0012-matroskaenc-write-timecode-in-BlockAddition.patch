@@ -1,4 +1,4 @@
-From 0026f08b7ccb824d0d71c5c39dbb99fb7c3d83a3 Mon Sep 17 00:00:00 2001
+From 51ba1cf73848a716a8d76c1328ea889da01dab8e Mon Sep 17 00:00:00 2001
 From: Jerome Martinez <jerome@mediaarea.net>
 Date: Thu, 4 Sep 2025 20:18:08 +0200
 Subject: [PATCH 13/19] matroskaenc: write timecode in BlockAddition
@@ -8,7 +8,7 @@ Subject: [PATCH 13/19] matroskaenc: write timecode in BlockAddition
  1 file changed, 44 insertions(+), 1 deletion(-)
 
 diff --git a/libavformat/matroskaenc.c b/libavformat/matroskaenc.c
-index 77ea4a2f67..b3b37a4188 100644
+index 6d7823f..5f83a2d 100644
 --- a/libavformat/matroskaenc.c
 +++ b/libavformat/matroskaenc.c
 @@ -61,6 +61,7 @@
@@ -37,7 +37,7 @@ index 77ea4a2f67..b3b37a4188 100644
      int64_t         blockadditionmapping_offset;
      int             codecpriv_offset;
      unsigned        codecpriv_size;     ///< size reserved for CodecPrivate excluding header+length field
-@@ -2895,6 +2900,7 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
+@@ -2891,6 +2896,7 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
      uint8_t smpte_2094_app5_buf[5 + SMPTE_2094_APP5_MAX_SIZE];
      uint8_t *lcevc = NULL;
      uint8_t *side_data;
@@ -45,7 +45,7 @@ index 77ea4a2f67..b3b37a4188 100644
      size_t side_data_size;
      uint64_t additional_id;
      unsigned track_number = track->track_num;
-@@ -2902,7 +2908,7 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
+@@ -2898,7 +2904,7 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
      // and BlockAdditions with three elements per BlockMore
      // Don't forget to increment the number of BlockMore when adding
      // support for writing a new blockadditional.
@@ -54,7 +54,7 @@ index 77ea4a2f67..b3b37a4188 100644
      int ret;
  
      mkv->cur_block.track  = track;
-@@ -3032,6 +3038,36 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
+@@ -3031,6 +3037,36 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
          }
      }
  
@@ -62,9 +62,9 @@ index 77ea4a2f67..b3b37a4188 100644
 +    if (par->codec_type == AVMEDIA_TYPE_VIDEO) {
 +        side_data = av_packet_get_side_data(pkt, AV_PKT_DATA_S12M_TIMECODE, &side_data_size);
 +        if (side_data && side_data_size >= sizeof(uint64_t)) {
-+            uint64_t *side_data_64 = (uint64_t*)side_data;
++            uint64_t *side_data_64 = (uint64_t *)side_data;
 +            uint64_t count = side_data_64[0];
-+            if (side_data_size / sizeof(uint64_t) - 1 >= count ) {
++            if (side_data_size / sizeof(uint64_t) - 1 >= count) {
 +                uint64_t written_count = count;
 +                side_data_64++;
 +                if (count > MAX_MATROSKA_BLOCK_ADD_SMPTE_12M) {
@@ -91,7 +91,7 @@ index 77ea4a2f67..b3b37a4188 100644
      ebml_writer_close_or_discard_master(&writer);
  
      if (!force_blockgroup && writer.nb_elements == 2) {
-@@ -3448,11 +3484,15 @@ after_cues:
+@@ -3454,11 +3490,15 @@ after_cues:
              int max_block_add_id_count = 0;
              int max_block_add_id_size = 3 + uint_size(track->max_blockaddid);
              int block_type_t35_count = 0;
@@ -105,18 +105,15 @@ index 77ea4a2f67..b3b37a4188 100644
 +                block_type_timecode_count += mkv_simulate_blockadditional_header(s, &remaining_video_track_space, MATROSKA_BLOCK_ADD_ID_TYPE_SMPTE_12M, MATROSKA_BLOCK_ADD_ID_SMPTE_12M + i);
 +            }
              for (int i = 0; i < track->itu_t_t35_count; i++) {
-                 block_type_t35_count += mkv_simulate_blockadditional_header(s, &remaining_video_track_space, MATROSKA_BLOCK_ADD_ID_TYPE_ITU_T_T35, MATROSKA_BLOCK_ADD_ID_TYPE_ITU_T_T35);
+                 block_type_t35_count += mkv_simulate_blockadditional_header(s, &remaining_video_track_space, MATROSKA_BLOCK_ADD_ID_TYPE_ITU_T_T35, MATROSKA_BLOCK_ADD_ID_ITU_T_T35);
              }
-@@ -3473,6 +3513,9 @@ after_cues:
+@@ -3479,6 +3519,9 @@ after_cues:
              for (int i = 0; i < block_type_t35_count; i++) {
                  mkv_write_blockadditional_header(s, MATROSKA_BLOCK_ADD_ID_TYPE_ITU_T_T35, MATROSKA_BLOCK_ADD_ID_ITU_T_T35);
              }
 +            for (int i = 0; i < block_type_timecode_count; i++) {
 +                mkv_write_blockadditional_header(s, MATROSKA_BLOCK_ADD_ID_TYPE_SMPTE_12M, MATROSKA_BLOCK_ADD_ID_SMPTE_12M + i);
-+           }
++            }
              if (remaining_video_track_space > 1) {
                  put_ebml_void(track_bc, remaining_video_track_space);
              }
--- 
-2.52.0
-

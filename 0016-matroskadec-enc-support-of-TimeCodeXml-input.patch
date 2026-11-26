@@ -1,4 +1,4 @@
-From c635927e9ff4e2e79d93b202f5c15cfe5cb152c8 Mon Sep 17 00:00:00 2001
+From b7f84d2b6765120d87bbcc52c1b4afb28ba12719 Mon Sep 17 00:00:00 2001
 From: Jerome Martinez <jerome@mediaarea.net>
 Date: Sun, 6 Jul 2025 15:12:22 +0200
 Subject: [PATCH 17/19] matroskadec/enc: support of TimeCodeXml input
@@ -8,7 +8,7 @@ Subject: [PATCH 17/19] matroskadec/enc: support of TimeCodeXml input
  1 file changed, 1194 insertions(+), 1 deletion(-)
 
 diff --git a/libavformat/matroskaenc.c b/libavformat/matroskaenc.c
-index 5eaa5926fa..f4dd475c96 100644
+index 5f83a2d..7c15026 100644
 --- a/libavformat/matroskaenc.c
 +++ b/libavformat/matroskaenc.c
 @@ -212,6 +212,7 @@ typedef struct mkv_track {
@@ -19,16 +19,16 @@ index 5eaa5926fa..f4dd475c96 100644
      /* This callback will be called twice: First with a NULL AVIOContext
       * to return the size of the (Simple)Block's data via size
       * and a second time with the AVIOContext set when the data
-@@ -271,6 +272,8 @@ typedef struct MatroskaMuxContext {
-     int                 flipped_raw_rgb;
+@@ -274,6 +275,8 @@ typedef struct MatroskaMuxContext {
      int                 default_mode;
      int                 move_cues_to_front;
-+    
-+    const char*         mediatimecode;
  
++    const char*         mediatimecode;
++
      uint32_t            segment_uid[4];
  } MatroskaMuxContext;
-@@ -1740,10 +1743,1178 @@ fail:
+ 
+@@ -1714,10 +1717,1178 @@ fail:
      return AVERROR(EINVAL);
  }
  
@@ -1091,20 +1091,20 @@ index 5eaa5926fa..f4dd475c96 100644
 +                }
 +                if (!tfsxml_init(&p, buffer, size, 0)) {
 +                    for (;;) {
-+                        if (tfsxml_next(&p, &v)) 
++                        if (tfsxml_next(&p, &v))
 +                            break;
 +                        if (!tfsxml_strcmp_charp(v, "MediaTimecode")) {
 +                            if (tfsxml_enter(&p))
 +                                continue;
 +                            for (;;) {
-+                                if (tfsxml_next(&p, &v)) 
++                                if (tfsxml_next(&p, &v))
 +                                    break;
 +                                if (!tfsxml_strcmp_charp(v, "media")) {
 +                                    if (tfsxml_enter(&p)) {
 +                                        continue;
 +                                    }
 +                                    for (;;) {
-+                                        if (timecodes_pos >= 100 || tfsxml_next(&p, &v)) 
++                                        if (timecodes_pos >= 100 || tfsxml_next(&p, &v))
 +                                            break;
 +                                        if (!tfsxml_strcmp_charp(v, "timecode_stream")) {
 +                                            uint64_t* values;
@@ -1112,7 +1112,7 @@ index 5eaa5926fa..f4dd475c96 100644
 +                                            values[0] = 2;
 +                                            values[1] = 2;
 +                                            for (;;) {
-+                                                if (tfsxml_attr(&p, &a, &v)) 
++                                                if (tfsxml_attr(&p, &a, &v))
 +                                                    break;
 +                                                if (!tfsxml_strcmp_charp(a, "start_tc")) {
 +                                                    if (v.len == 11) {
@@ -1132,11 +1132,11 @@ index 5eaa5926fa..f4dd475c96 100644
 +                                            }
 +                                            if (!tfsxml_enter(&p)) {
 +                                                for (;;) {
-+                                                    if (tfsxml_next(&p, &v)) 
++                                                    if (tfsxml_next(&p, &v))
 +                                                        break;
 +                                                    if (!tfsxml_strcmp_charp(v, "tc")) {
 +                                                        for (;;) {
-+                                                            if (tfsxml_attr(&p, &a, &v)) 
++                                                            if (tfsxml_attr(&p, &a, &v))
 +                                                                break;
 +                                                            if (!tfsxml_strcmp_charp(a, "v")) {
 +                                                                if (v.len == 11) {
@@ -1215,10 +1215,10 @@ index 5eaa5926fa..f4dd475c96 100644
      if (par->codec_type == AVMEDIA_TYPE_VIDEO) {
          side_data = av_packet_get_side_data(pkt, AV_PKT_DATA_S12M_TIMECODE, &side_data_size);
          if (side_data && side_data_size >= sizeof(uint64_t)) {
-             uint64_t *side_data_64 = (uint64_t*)side_data;
+             uint64_t *side_data_64 = (uint64_t *)side_data;
 -            uint64_t count = side_data_64[0];
 +            count = side_data_64[0];
-             if (side_data_size / sizeof(uint64_t) - 1 >= count ) {
+             if (side_data_size / sizeof(uint64_t) - 1 >= count) {
                  uint64_t written_count = count;
                  side_data_64++;
 @@ -3067,6 +4239,26 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
@@ -1227,7 +1227,7 @@ index 5eaa5926fa..f4dd475c96 100644
  
 +    // Extract timecode from external file and write as BlockAdditional
 +    size_t timecode_buf_pos = 0;
-+    if (track->timecodes) {
++    if (track->timecodes[0]) {
 +        for (uint64_t i = 0; i < 100; i++) {
 +            if (!track->timecodes[i])
 +                continue;
@@ -1248,7 +1248,7 @@ index 5eaa5926fa..f4dd475c96 100644
      ebml_writer_close_or_discard_master(&writer);
  
      if (!force_blockgroup && writer.nb_elements == 2) {
-@@ -3764,6 +4956,7 @@ static const AVOption options[] = {
+@@ -3806,6 +4998,7 @@ static const AVOption options[] = {
      { "infer", "for each track type, mark each track of disposition default as default; if none exists, mark the first track as default", 0, AV_OPT_TYPE_CONST, { .i64 = DEFAULT_MODE_INFER }, 0, 0, FLAGS, .unit = "default_mode" },
      { "infer_no_subs", "for each track type, mark each track of disposition default as default; for audio and video: if none exists, mark the first track as default", 0, AV_OPT_TYPE_CONST, { .i64 = DEFAULT_MODE_INFER_NO_SUBS }, 0, 0, FLAGS, .unit = "default_mode" },
      { "passthrough", "use the disposition flag as-is", 0, AV_OPT_TYPE_CONST, { .i64 = DEFAULT_MODE_PASSTHROUGH }, 0, 0, FLAGS, .unit = "default_mode" },
@@ -1256,6 +1256,3 @@ index 5eaa5926fa..f4dd475c96 100644
      { NULL },
  };
  
--- 
-2.52.0
-
